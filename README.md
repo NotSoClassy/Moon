@@ -5,4 +5,4 @@
 
 # About
 I felt like making a programming language because it looked fun.
-There's are bugs, and I most likely won't be fixing them.
+There is bugs, and I most likely won't be fixing them.

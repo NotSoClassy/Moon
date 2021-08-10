@@ -11,7 +11,7 @@ pub struct RustFunc {
   pub func: &'static BuiltIn
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub enum Value {
   String(String),
   Number(f64),
@@ -19,6 +19,19 @@ pub enum Value {
   Closure(Closure),
   NativeFunc(Rc<RustFunc>),
   Nil
+}
+
+impl Debug for Value {
+  fn fmt(&self, fmt: &mut Formatter<'_>) -> Result {
+    match self {
+      Value::String(s) => write!(fmt, "{}", s),
+      Value::Number(n) => write!(fmt, "{}", n),
+      Value::Bool(b) => write!(fmt, "{}", b),
+      Value::Closure(c) => write!(fmt, "function: {}", c.name),
+      Value::NativeFunc(rf) => write!(fmt, "function: {}", rf.name),
+      Value::Nil => write!(fmt, "nil")
+    }
+  }
 }
 
 impl Debug for RustFunc {
