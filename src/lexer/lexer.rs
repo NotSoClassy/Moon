@@ -1,5 +1,3 @@
-use crate::lexer::Result::{ Ok, Err };
-use crate::lexer::Result;
 use crate::lexer::Token;
 
 pub struct Lexer {
@@ -10,6 +8,20 @@ pub struct Lexer {
   pub line: usize,
   pub buf: String,
   pub token: Token
+}
+
+fn get_token(res: Result<Token, String> ) -> Option<Token> {
+  if let Ok(tkn) = res {
+    return Some(tkn)
+  }
+  None
+}
+
+fn resolve(res: Result<(), String>, token: Token) -> Result<Token, String> {
+  if let Err(e) = res {
+    return Err(e.to_string())
+  }
+  Ok(token)
 }
 
 impl Lexer {
@@ -34,7 +46,7 @@ impl Lexer {
     if let Err(e) = res {
       Err(e)
     } else {
-      self.token = res.get_token().unwrap();
+      self.token = get_token(res).unwrap();
       Ok(())
     }
   }
@@ -80,7 +92,7 @@ impl Lexer {
 
       '\0' => Ok(Token::Eof),
 
-      '\'' | '"' => self.read_string(self.current).resolve(Token::String),
+      '\'' | '"' => resolve(self.read_string(self.current), Token::String),
 
 
       '\n' | '\r' => {
@@ -104,7 +116,7 @@ impl Lexer {
             Ok(Token::Name)
           }
         } else if self.is_num() {
-          self.read_number().resolve(Token::Number)
+          resolve(self.read_number(), Token::Number)
         } else {
           Err(self.error("unexpected token", Token::SC(self.current)))
         }
@@ -158,6 +170,7 @@ impl Lexer {
             }
           };
 
+          self.next();
           self.buf += c;
         }
 

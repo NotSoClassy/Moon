@@ -1,268 +1,308 @@
-use crate::common::{
-  Closure, Value, Opcode
-};
-
 use std::collections::HashMap;
 
+use crate::common::{ Closure, Value, Opcode, type_value };
+use code::*;
+
 mod builtin;
+mod code;
+
+pub use code::pretty_print_code;
 
 pub struct CallInfo {
-  pub closure: Closure,
-  pub base: usize,
-  pub pc: usize
+  closure: Closure,
+  base: u8,
+  pc: usize
 }
 
 impl CallInfo {
-  pub fn new(closure: Closure) -> Self {
+  pub fn new(closure: Closure, base: u8) -> Self {
     CallInfo {
       closure,
-      base: 0,
+      base,
       pc: 0
     }
   }
 }
 
 pub struct VM {
-  pub call_stack: Vec<CallInfo>,
-  pub globals: HashMap<String, Value>,
-  pub regs: Vec<Value>
+  call_stack: Vec<CallInfo>,
+  globals: HashMap<String, Value>,
+  regs: Vec<Value>
 }
 
 impl VM {
   pub fn new(closure: Closure) -> Self {
-    let mut vm = VM {
-      call_stack: vec![ CallInfo::new(closure) ],
+    VM {
+      call_stack: vec![ CallInfo::new(closure, 0) ],
       globals: HashMap::new(),
-      regs: Vec::new()
-    };
-
-    vm.load_globals();
-
-    vm
-  }
-
-  pub fn load_globals(&mut self) {
-    builtin::load(self);
+      regs: Vec::with_capacity(20)
+    }
   }
 
   pub fn run(&mut self) -> Result<(), String> {
+    builtin::load(self);
+
     while self.is_end_of_code() {
-      self.execute()?
+      let res = self.exec();
+
+      if let Err(e) = res {
+        return Err(self.error(e))
+      }
     }
+
     Ok(())
   }
 
-  fn next(&mut self) {
-    *self.pc_mut() += 1
-  }
+  fn exec(&mut self) -> Result<(), String> {
+    let call = self.call();
+    let base = call.base;
+    let i = self.get_i();
 
-  fn next_byte(&mut self) -> u8 {
-    let b = self.closure().code[self.pc()]; self.next(); b
-  }
-
-  fn operands(&mut self) -> (Opcode, u8, u8, u8, u16) {
-    let op = self.next_byte();
-    let a = self.next_byte();
-    let b = self.next_byte();
-    let c = self.next_byte();
-    let bx = ((b as u16) << 8) | (c as u16);
-
-    (Opcode::from(op), a, b, c, bx)
-  }
-
-  fn execute(&mut self) -> Result<(), String> {
-    let (op, a, b, c, bx) = self.operands();
-    let base = self.call_info().base;
-    // println!("{:?} {} {} {} {}", op, a, b, c, bx);
-
-    macro_rules! arithmetic {
-      ($op:tt) => { {
-        let lhs = get!(b);
-        let rhs = get!(c);
-
-        if let Value::Number(lhn) = lhs {
-          if let Value::Number(rhn) = rhs {
-            set!(a, Value::Number(lhn $op rhn))
-          } else {
-            return Err("expected number".into())
-          }
-        } else {
-          return Err("expected number".into())
-        } }
+    macro_rules! konst {
+      ($v:expr) => {
+        call.closure.consts[($v) as usize].clone()
       };
+    }
+
+    macro_rules! RA_mut {
+      () => {{
+        let pos = (base + get_a(i)) as usize;
+        let v = self.regs.get_mut(pos);
+        if v.is_none() {
+          self.regs.insert(pos, Value::Nil);
+          self.regs.get_mut(pos).unwrap()
+        } else {
+          v.unwrap()
+        }
+      }};
+    }
+
+    macro_rules! RA {
+      () => {
+        self.regs[(base + get_a(i)) as usize].clone()
+      };
+    }
+
+    macro_rules! RB {
+      () => {
+        self.regs[(base + get_b(i)) as usize].clone()
+      };
+    }
+
+    macro_rules! RC_mut {
+      () => {{
+        let pos = (base + get_c(i)) as usize;
+        let v = self.regs.get_mut(pos);
+        if v.is_none() {
+          self.regs.insert(pos, Value::Nil);
+          self.regs.get_mut(pos).unwrap()
+        } else {
+          v.unwrap()
+        }
+      }};
+    }
+
+    macro_rules! RC {
+      () => {
+        self.regs[(base + get_c(i)) as usize].clone()
+      };
+    }
+
+    macro_rules! RCA {
+      () => {
+        if get_a_mode(i) == 1 {
+          konst!(get_a(i))
+        } else {
+          RC!()
+        }
+      };
+    }
+
+    macro_rules! RCB {
+      () => {
+        if get_b_mode(i) == 1 {
+          konst!(get_b(i))
+        } else {
+          RB!()
+        }
+      };
+    }
+
+    macro_rules! arith {
+      ($op:tt) => {{
+        let rca = RCA!();
+        let rcb = RCB!();
+
+        *RC_mut!() = (rca $op rcb)?;
+      }};
     }
 
     macro_rules! cmp {
-      ($op:tt) => { {
-        let lhs = get!(b);
-        let rhs = get!(c);
+      ($op:tt) => {{
+        let rca = RCA!();
+        let rcb = RCB!();
 
-        set!(a, Value::Bool(lhs $op rhs))
-      } };
+        *RC_mut!() = Value::Bool(rca $op rcb)
+      }};
     }
 
-    macro_rules! set {
-      ($pos:expr, $val:expr) => { {
-        let idx = base + $pos as usize;
-        if self.regs.get(idx).is_some() {
-          self.regs[idx] = $val
-        } else {
-          let pos = $pos as usize;
-          for _ in self.regs.len()..pos {
-            self.regs.push(Value::Nil)
-          }
-          self.regs.push($val)
-        } }
-      };
-    }
+    match get_op(i) {
 
-    macro_rules! get {
-      ($pos:expr) => {
-        self.regs[base + $pos as usize].clone()
-      };
-    }
+      Opcode::Move => {
+        *RA_mut!() = RB!()
+      }
 
-    match Opcode::from(op) {
-      Opcode::Move => set!(a, get!(b)),
-      Opcode::LoadConst => set!(a, self.get_const(bx)),
-      Opcode::LoadBool => set!(a, Value::Bool(b == 1)),
-      Opcode::LoadNil => set!(a, Value::Nil),
+      Opcode::LoadConst => {
+        *RA_mut!() = konst!(get_bx(i))
+      }
+
+      Opcode::LoadBool => {
+        *RA_mut!() = Value::Bool(get_b(i) == 1)
+      }
+
+      Opcode::LoadNil => {
+        *RA_mut!() = Value::Nil
+      }
 
       Opcode::GetGlobal => {
-        if let Value::String(name) = self.get_const(bx) {
-          let value = self.globals.get(&name).unwrap_or(&Value::Nil);
-          set!(a, value.clone())
+        let k = konst!(get_bx(i));
+        if let Value::String(str) = k {
+          *RA_mut!() = self.globals.get(&str).unwrap_or(&Value::Nil).clone();
         } else {
-          return Err("global index is not a string".into())
+          return Err("global index must be a string".into())
         }
       }
 
       Opcode::SetGlobal => {
-        if let Value::String(name) = self.get_const(bx) {
-          self.globals.insert(name, get!(a));
+        let k = konst!(get_bx(i));
+        if let Value::String(str) = k {
+          self.globals.insert(str, RA!());
         } else {
-          return Err("global index is not a string".into())
+          return Err("global index must be a string".into())
         }
       }
 
-      Opcode::Add => arithmetic!(+),
-      Opcode::Sub => arithmetic!(-),
-      Opcode::Mul => arithmetic!(*),
-      Opcode::Div => arithmetic!(/),
+      Opcode::Add => arith!(+),
+      Opcode::Sub => arith!(-),
+      Opcode::Mul => arith!(*),
+      Opcode::Div => arith!(/),
       Opcode::Neq => cmp!(!=),
       Opcode::Eq => cmp!(==),
-      Opcode::Gt => cmp!(<),
-      Opcode::Ge => cmp!(<=),
       Opcode::Lt => cmp!(>),
+      Opcode::Gt => cmp!(<),
       Opcode::Le => cmp!(>=),
+      Opcode::Ge => cmp!(<=),
 
-      Opcode::Not => set!(a, Value::Bool(self.not(get!(b)))),
       Opcode::Neg => {
-        let n = self.number(get!(b))?;
-        set!(a, Value::Number(-n))
+        let rcb = RCB!();
+        if let Value::Number(n) = rcb {
+          *RA_mut!() = Value::Number(-n)
+        } else {
+          return Err(format!("cannot make a {} negative", type_value(rcb)))
+        }
       }
 
-      Opcode::Jmp => self.jmp(a == 1, bx as usize),
+      Opcode::Not => {
+        *RA_mut!() = Value::Bool(!self.bool(RCB!()))
+      }
+
+      Opcode::Jmp => {
+        if get_a(i) == 1 {
+          *self.pc_mut() -= get_bx(i) as usize;
+        } else {
+          *self.pc_mut() += get_bx(i) as usize;
+        }
+
+        return Ok(())
+      }
 
       Opcode::Test => {
-        if self.truthy(get!(a)) {
-          *self.pc_mut() += 4;
+        if self.bool(RA!()) {
+          *self.pc_mut() += 2;
+          return Ok(())
         }
       }
 
       Opcode::Call => {
-        let func = get!(a);
+        let func = RA!();
+        let base = get_a(i) + 1;
 
-        let base = a as usize + 1;
+        match func {
+          Value::NativeFunc(nf) => {
+            let mut vals = Vec::new();
 
-        if let Value::Closure(closure) = func {
-          let nparams = closure.nparams;
-          let ci = CallInfo {
-            closure,
-            base: base + nparams as usize - 1,
-            pc: 0
-          };
+            for i in base .. get_b(i) {
+              vals.push(&self.regs[i as usize])
+            }
 
-          self.call_stack.push(ci);
-        } else if let Value::NativeFunc(nf) = func {
-          let mut vals = Vec::new();
-
-          for i in base..b as usize {
-            vals.push(self.regs.get(i).unwrap_or(&Value::Nil))
+            let ret = (nf.func)(vals)?;
+            *RC_mut!() = ret;
           }
 
-          let ret = (nf.func)(vals);
-          set!(c, ret)
-        } else {
-          return Err("only functions can be called".into())
+          Value::Closure(_c) => {
+            todo!();
+            /*let call = CallInfo::new(c, base);
+            self.call_stack.push(call);
+            return Ok(()) // don't skip first instruction of new function*/
+          }
+
+          _ => return Err(format!("cannot call a {} value", type_value(func)))
         }
       }
 
       Opcode::Close => {
-        for i in a..self.regs.len() as u8 {
-          self.regs[i as usize] = Value::Nil
+        for i in get_a(i) as usize .. self.regs.len() {
+          self.regs[i] = Value::Nil
         }
       }
     }
 
+    *self.pc_mut() += 1;
+
     Ok(())
   }
 
-  fn jmp(&mut self, neg: bool, i: usize) {
-    if neg {
-      *self.pc_mut() -= i * 4
-    } else {
-      *self.pc_mut() += i * 4
-    }
+  fn error(&self, err: String) -> String {
+    let call = self.call();
+    format!("{}:{}: {}", call.closure.name, call.closure.lines[call.pc], err)
   }
 
-  fn not(&self, val: Value) -> bool {
-    !self.truthy(val)
-  }
-
-  fn truthy(&self, val: Value) -> bool {
+  fn bool(&self, val: Value) -> bool {
     match val {
       Value::Bool(b) => b,
       Value::Nil => false,
-      _ => true,
-    }
-  }
-
-  fn get_const(&self, pos: u16) -> Value {
-    self.closure().consts[pos as usize].clone()
-  }
-
-  fn number(&self, v: Value) -> Result<f64, String> {
-    if let Value::Number(n) = v {
-      Ok(n)
-    } else {
-      Err("expected number".into())
+      _ => true
     }
   }
 
   #[inline(always)]
   fn is_end_of_code(&self) -> bool {
-    let cf = self.call_stack.last().unwrap();
-    cf.pc < cf.closure.code.len()
+    let call = self.call_stack.last().unwrap();
+    call.pc < call.closure.code.len()
+  }
+
+  #[inline(always)]
+  fn get_i(&self) -> u32 {
+    let call = self.call();
+    call.closure.code[call.pc]
+  }
+
+  #[inline(always)]
+  fn call(&self) -> &CallInfo {
+    self.call_stack.last().unwrap()
+  }
+
+  #[inline(always)]
+  fn call_mut(&mut self) -> &mut CallInfo {
+    self.call_stack.last_mut().unwrap()
+  }
+
+  fn pc(self) -> usize {
+    self.call().pc
   }
 
   #[inline(always)]
   fn pc_mut(&mut self) -> &mut usize {
-    &mut self.call_stack.last_mut().unwrap().pc
-  }
-
-  #[inline(always)]
-  fn pc(&self) -> usize {
-    self.call_info().pc
-  }
-
-  #[inline(always)]
-  fn call_info(&self) -> &CallInfo {
-    &self.call_stack.last().unwrap()
-  }
-
-  #[inline(always)]
-  fn closure(&self) -> &Closure {
-    &self.call_info().closure
+    &mut self.call_mut().pc
   }
 }

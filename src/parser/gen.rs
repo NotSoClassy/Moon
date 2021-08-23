@@ -2,13 +2,8 @@ use std::convert::TryInto;
 
 use crate::common::{ Closure, Opcode, Value };
 use crate::parser::ast::{
-  Stmt, Expr, UnOp, BinOp
+  Node, Stmt, Expr, UnOp, BinOp
 };
-
-#[derive(Debug)]
-pub enum CompileError {
-  ConstantOverflow,
-}
 
 pub struct VarInfo {
   pub name: String,
@@ -24,309 +19,389 @@ impl VarInfo {
   }
 }
 
-pub struct FuncState {
-  pub nvars: u8,
-  pub freereg: u8,
-  pub vars: Vec<VarInfo>,
-  pub closure: Closure
-}
-
-impl FuncState {
-  pub fn new() -> Self {
-    FuncState {
-      nvars: 0,
-      freereg: 0,
-      vars: Vec::new(),
-      closure: Closure::new()
-    }
-  }
-}
-
 pub struct Compiler {
-  pub fs: FuncState,
+  pub closure: Closure,
+  freereg: u8,
+  nvars: u8,
+  vars: Vec<VarInfo>,
+  name: String,
+  node: Option<Node>,
+  line: usize
+}
+
+#[inline(always)]
+fn set_mode(mode: u8, val: u8) -> u16 {
+  let mode = mode & 0x1;
+  ((mode as u16) << 8)
+      | (val as u16)
+}
+
+#[inline(always)]
+fn make_abx(op: Opcode, a: u16, bx: u16) -> u32 {
+  make_abc(op, a, (bx >> 8) & 0xFF, (bx & 0xFF) as u8)
+}
+
+fn make_abc(op: Opcode, a: u16, b: u16, c: u8) -> u32 {
+  let op = op as u8 & 0x3F; // select first 6 bits (0x3F == 0b111111)
+  let a = a & 0x1FF; // select first 9 bits (0x1FF == 0b111111111)
+  let b = b & 0x1FF;
+
+  ((op as u32) << 26)
+      | ((a as u32) << 17)
+      | ((b as u32) << 8)
+      |  (c as u32)
 }
 
 impl Compiler {
-  pub fn new() -> Self {
+  pub fn new(name: String) -> Self {
+    let mut closure = Closure::new();
+    closure.name = name.clone();
+
     Compiler {
-      fs: FuncState::new()
+      nvars: 0,
+      freereg: 0,
+      vars: Vec::new(),
+      closure: closure,
+      line: 1,
+      node: None,
+      name
     }
   }
 
-  pub fn compile(&mut self, ast: Vec<Stmt>) -> Result<(), CompileError> {
-    for node in ast {
-      self.walk(node)?;
-      self.fs.freereg = self.fs.nvars;
+  pub fn compile(&mut self, nodes: Vec<Node>) -> Result<(), String> {
+    for node in nodes {
+      let err = self.walk(node);
+      self.error(err)?;
+
+      self.freereg = self.nvars;
     }
+
     Ok(())
   }
 
-  pub fn walk(&mut self, stmt: Stmt) -> Result<(), CompileError> {
+  #[inline(always)]
+  fn error(&self, err: Result<(), String>) -> Result<(), String> {
+    if let Err(e) = err {
+      Err(format!("{}:{}: {}", self.name, self.line, e))
+    } else {
+      Ok(())
+    }
+  }
+
+  #[inline(always)]
+  fn walk(&mut self, node: Node) -> Result<(), String> {
+    self.stmt(node.stmt)?;
+    self.line = node.line;
+    Ok(())
+  }
+
+  fn stmt(&mut self, stmt: Stmt) -> Result<(), String> {
     match stmt {
+      Stmt::While(cond, block) => self.while_stmt(cond, *block),
+      Stmt::Block(block) => self.block_stmt(block),
       Stmt::Let(name, value) => self.let_stmt(name, value),
-      Stmt::If(cond, stmts) => self.if_stmt(cond, *stmts),
-      Stmt::While(cond, body) => self.while_stmt(cond, *body),
-      Stmt::Block(code) => self.block_stmt(code),
+      Stmt::If(cond, blocks) => self.if_stmt(cond, *blocks),
       Stmt::Fn(name, params, body) => self.fn_stmt(name, params, *body),
 
-      Stmt::Expr(exp) => {
-        self.exp2freereg(exp)?;
-        Ok(())
-      }
+      Stmt::Expr(exp) => { self.exp2nextreg(exp)?; Ok(())},
     }
   }
 
-  fn walk_len(&mut self, stmt: Stmt) -> Result<usize, CompileError> {
-    let start = self.fs.closure.code.len();
-    self.walk(stmt)?;
-    Ok((self.fs.closure.code.len() - start) / 4)
+  fn let_stmt(&mut self, name: String, value: Expr) -> Result<(), String> {
+    let var = self.register_var(name)?;
+    self.expr(value, var)
   }
 
-  fn block_stmt(&mut self, code: Vec<Stmt>) -> Result<(), CompileError> {
-    let nvars = self.fs.nvars;
-    self.compile(code)?;
-
-    let close = self.fs.nvars - nvars;
-
-    if close != 0 {
-      self.fs.nvars -= close;
-      self.emit_abc(Opcode::Close, close, 0, 0);
-    }
-
-    Ok(())
-  }
-
-  fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Stmt) -> Result<(), CompileError> {
-    let mut compiler = Compiler::new();
-    compiler.fs.closure.name = name.clone();
-    compiler.fs.closure.nparams = params.len() as u8;
+  fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Node) -> Result<(), String> {
+    let mut compiler = Compiler::new(self.name.clone());
+    compiler.closure.name = name.clone();
+    compiler.closure.nparams = params.len() as u8;
 
     for param in params {
-      compiler.new_var(param);
+      compiler.register_var(param)?;
     }
 
+    compiler.freereg = compiler.nvars;
     compiler.walk(body)?;
 
-    let closure = Value::Closure(compiler.fs.closure);
+    let closure = Value::Closure(compiler.closure);
 
-    let var = self.new_var(name);
+    let var = self.register_var(name)?;
     self.load_const(closure, var)?;
 
     Ok(())
   }
 
-  fn let_stmt(&mut self, name: String, value: Expr) -> Result<(), CompileError> {
-    let reg = self.new_var(name);
-    self.expr(value, reg)
-  }
+  fn if_stmt(&mut self, cond: Expr, blocks: (Node, Option<Node>)) -> Result<(), String> {
+    let (if_block, else_block) = blocks;
+    let cond = self.exp2nextreg(cond)?;
 
-  fn while_stmt(&mut self, cond: Expr, block: Stmt) -> Result<(), CompileError> {
-    let start = self.fs.closure.code.len();
-    let reg = self.exp2freereg(cond)?;
+    self.emit(make_abc(Opcode::Test, cond.into(), 0, 0));
+    self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
 
-    self.emit_abc(Opcode::Test, reg, 0, 0);
-    self.emit_abc(Opcode::Jmp, 0, 0, 0);
+    let jmp_pos = self.closure.code.len() - 1;
+    let mut jmp = if else_block.is_some() { 1 } else { 0 };
+    let start = self.closure.code.len() - 1;
 
-    let jmp_pos = self.fs.closure.code.len();
-    let pos = self.walk_len(block)? + 2;
+    self.walk(if_block)?;
 
-    self.patch_jmp(jmp_pos, pos.try_into().unwrap());
+    jmp += self.closure.code.len() - start - 1;
 
-    self.emit_abx(Opcode::Jmp, 1, (((self.fs.closure.code.len() - start) / 4) + 1) as u16);
+    self.fix_jmp(jmp_pos, false, jmp)?;
 
-    Ok(())
-  }
+    if let Some(block) = else_block {
+      self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
+      let jmp_pos = self.closure.code.len() - 1;
+      let start = self.closure.code.len() - 1;
 
-  fn if_stmt(&mut self, cond: Expr, blocks: (Stmt, Option<Stmt>)) -> Result<(), CompileError> {
-    let (truthy, falsey) = blocks;
-    let reg = self.exp2freereg(cond)?;
-
-    self.emit_abc(Opcode::Test, reg, 0, 0);
-    self.emit_abc(Opcode::Jmp, 0, 0, 0);
-
-    let jmp_pos = self.fs.closure.code.len();
-    let mut len = self.walk_len(truthy)?;
-
-    if falsey.is_some() { len += 1 }
-
-    self.patch_jmp(jmp_pos, len.try_into().unwrap());
-
-    if let Some(stmt) = falsey {
-      self.emit_abc(Opcode::Jmp, 0, 0, 0);
-
-      let jmp_pos = self.fs.closure.code.len();
-      let len = self.walk_len(stmt)?;
-
-      self.patch_jmp(jmp_pos, len.try_into().unwrap());
+      self.walk(block)?;
+      self.fix_jmp(jmp_pos, false, self.closure.code.len() - start - 1)?;
     }
 
     Ok(())
   }
 
-  fn expr(&mut self, exp: Expr, reg: u8) -> Result<(), CompileError> {
+  fn while_stmt(&mut self, cond: Expr, block: Node) -> Result<(), String> {
+    let start = self.closure.code.len() - 1;
+    let cond = self.exp2nextreg(cond)?;
+
+    self.emit(make_abc(Opcode::Test, cond.into(), 0, 0));
+    self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
+
+    let jmp_pos = self.closure.code.len() - 1;
+
+    self.walk(block)?;
+    let to = self.closure.code.len() - start - 1;
+    self.closure.code[jmp_pos] = self.jmp(false, to - 1)?;
+
+    let jmp = self.jmp(true, to)?;
+    self.emit(jmp);
+
+    Ok(())
+  }
+
+  fn block_stmt(&mut self, block: Vec<Node>) -> Result<(), String> {
+    let nvars = self.nvars;
+    self.compile(block)?;
+
+    let close = self.nvars - nvars;
+
+    if close != 0 {
+      self.nvars -= close;
+      self.emit(make_abc(Opcode::Close, close.into(), 0, 0));
+    }
+
+    Ok(())
+  }
+
+  fn exp2nextreg(&mut self, exp: Expr) -> Result<u8, String> {
+    self.reserve_regs(1)?;
+    self.expr(exp, self.freereg - 1)?;
+    Ok(self.freereg - 1)
+  }
+
+  fn expr(&mut self, exp: Expr, reg: u8) -> Result<(), String> {
     match exp {
-      Expr::String(str) => self.load_const(Value::String(str), reg),
+      Expr::String(s) => self.load_const(Value::String(s), reg),
       Expr::Number(n) => self.load_const(Value::Number(n), reg),
+      Expr::Name(s) => self.load_var(s, reg),
+
       Expr::Bool(b) => Ok(self.load_bool(b, reg)),
-      Expr::Name(str) => self.load_var(str, reg),
       Expr::Nil => Ok(self.load_nil(reg)),
 
-      Expr::Binary(lhs, op, rhs) => self.bin_expr(*lhs, op, *rhs, reg),
-      Expr::Unary(op, exp) => self.un_expr(op, *exp, reg),
+      Expr::Binary(lhs, op, rhs) => self.binary(*lhs, op, *rhs, reg),
+      Expr::Unary(op, exp) => self.unary(op, *exp, reg),
       Expr::Call(func, args) => self.call(*func, args, reg),
     }
   }
 
-  fn bin_expr(&mut self, lhs: Expr, op: BinOp, rhs: Expr, res_reg: u8) -> Result<(), CompileError> {
-    if op == BinOp::Assign {
-      if let Expr::Name(name) = lhs {
-        self.expr(rhs, res_reg)?;
-        self.assign(name, res_reg)?;
-        return Ok(())
-      } else {
-        panic!("this should be impossible")
-      }
+  fn call(&mut self, func: Expr, args: Vec<Expr>, reg: u8) -> Result<(), String> {
+    self.expr(func, reg)?;
+
+    for arg in args {
+      self.exp2nextreg(arg)?;
     }
 
-    let lh_reg = self.exp2freereg(lhs)?;
-    let rh_reg = self.exp2freereg(rhs)?;
+    self.emit(make_abc(Opcode::Call, reg.into(), self.freereg.into(), reg));
+    Ok(())
+  }
 
-    macro_rules! bin {
-      ($n:ident) => {
-        Ok(self.emit_abc(Opcode::$n, res_reg, lh_reg, rh_reg))
+  fn binary(&mut self, lhs: Expr, op: BinOp, rhs: Expr, reg: u8) -> Result<(), String> {
+    if op == BinOp::Assign { return self.assignment(lhs, rhs, reg) }
+
+    let lhv = self.rc2reg(lhs, reg)?;
+    let rhv = self.rc2reg(rhs, reg)?;
+
+    macro_rules! arith {
+      ($i:ident) => {
+        self.emit(make_abc(Opcode::$i, lhv, rhv, reg))
+      };
+    }
+
+    macro_rules! cmp {
+      ($i:ident) => {
+        self.emit(make_abc(Opcode::$i, lhv, rhv, reg))
       };
     }
 
     match op {
-      BinOp::Add => bin!(Add),
-      BinOp::Sub => bin!(Sub),
-      BinOp::Mul => bin!(Mul),
-      BinOp::Div => bin!(Div),
+      BinOp::Add => arith!(Add),
+      BinOp::Sub => arith!(Sub),
+      BinOp::Mul => arith!(Mul),
+      BinOp::Div => arith!(Div),
 
-      BinOp::Neq => bin!(Neq),
-      BinOp::Eq => bin!(Eq),
-      BinOp::Gt => bin!(Gt),
-      BinOp::Ge => bin!(Ge),
-      BinOp::Lt => bin!(Lt),
-      BinOp::Le => bin!(Le),
+      BinOp::Neq => cmp!(Neq),
+      BinOp::Eq => cmp!(Eq),
+      BinOp::Lt => cmp!(Lt),
+      BinOp::Gt => cmp!(Gt),
+      BinOp::Le => cmp!(Le),
+      BinOp::Ge => cmp!(Ge),
 
-      BinOp::Assign => Ok(())
-    }
-  }
-
-  fn un_expr(&mut self, op: UnOp, exp: Expr, reg: u8) -> Result<(), CompileError> {
-    self.expr(exp, reg)?;
-    let op = match op {
-      UnOp::Neg => Opcode::Neg,
-      UnOp::Not => Opcode::Not
-    };
-
-    self.emit_abc(op, reg, reg, 0);
-    Ok(())
-  }
-
-  fn call(&mut self, func: Expr, args: Vec<Expr>, reg_reg: u8) -> Result<(), CompileError> {
-    let base = self.exp2freereg(func)?;
-
-    for arg in args {
-      self.exp2freereg(arg)?;
+      BinOp::Assign => {}
     }
 
-    self.emit_abc(Opcode::Call, base, self.fs.freereg, reg_reg);
     Ok(())
   }
 
-  fn load_bool(&mut self, bool: bool, reg: u8) {
-    self.emit_abc(Opcode::LoadBool, reg, bool as u8, 0)
-  }
+  fn unary(&mut self, op: UnOp, exp: Expr, reg: u8) -> Result<(), String> {
+    let exp = self.rc2nextreg(exp)?;
 
-  fn load_const(&mut self, val: Value, reg: u8) -> Result<(), CompileError> {
-    let pos = self.resolve_const(val)?;
-    self.emit_abx(Opcode::LoadConst, reg, pos);
+    match op {
+      UnOp::Neg => {
+        self.emit(make_abc(Opcode::Neg, reg.into(), exp, 0))
+      }
+
+      UnOp::Not => {
+        self.emit(make_abc(Opcode::Not, reg.into(), exp, 0))
+      }
+    }
+
     Ok(())
   }
 
-  fn load_var(&mut self, name: String, reg: u8) -> Result<(), CompileError> {
-    let locvar = self.get_var(name.clone());
+  fn assignment(&mut self, name: Expr, value: Expr, reg: u8) -> Result<(), String> {
+    if let Expr::Name(var) = name {
+      self.expr(value, reg)?;
 
-    if let Some(pos) = locvar {
-      self.emit_abc(Opcode::Move, reg, pos, 0);
+      if let Some(var_reg) = self.get_var(var.clone()) {
+        self.emit(make_abc(Opcode::Move, var_reg.into(), reg.into(), 0));
+      } else {
+        let c = self.resolve_const(Value::String(var))?;
+        self.emit(make_abx(Opcode::SetGlobal, reg.into(), c))
+      }
+
+      Ok(())
     } else {
-      let pos = self.resolve_const(Value::String(name))?;
-      self.emit_abx(Opcode::GetGlobal, reg, pos);
+      panic!("This should be impossible!");
+    }
+  }
+
+  fn rc2nextreg(&mut self, exp: Expr) -> Result<u16, String> {
+    self.reserve_regs(1)?;
+    self.rc2reg(exp, self.freereg - 1)
+  }
+
+  fn rc2reg(&mut self, exp: Expr, reg: u8) -> Result<u16, String> {
+    macro_rules! RC {
+      ($i:ident, $v:ident) => {
+        {
+          let pos = self.resolve_const(Value::$i($v))?;
+
+          if pos < u8::MAX.into() {
+            return Ok(set_mode(1, pos.try_into().unwrap()))
+          } else {
+            self.expr(exp, reg)?;
+            return Ok(reg.into());
+          }
+        }
+      };
     }
 
-    Ok(())
+    match exp.clone() {
+      Expr::String(s) => RC!(String, s),
+      Expr::Number(n) => RC!(Number, n),
+
+      _ => {
+        self.expr(exp, reg)?;
+        return Ok(reg.into());
+      }
+    }
   }
 
   fn load_nil(&mut self, reg: u8) {
-    self.emit_abc(Opcode::LoadNil, reg, 0, 0);
+    self.emit(make_abc(Opcode::LoadNil, reg.into(), 0, 0))
   }
 
-  fn assign(&mut self, var: String, val: u8) -> Result<(), CompileError> {
-    if let Some(reg) = self.get_var(var.clone()) {
-      self.emit_abc(Opcode::Move, reg, val, 0);
+  fn load_bool(&mut self, b: bool, reg: u8) {
+    self.emit(make_abc(Opcode::LoadBool, reg.into(), b.into(), 0))
+  }
+
+  fn load_var(&mut self, name: String, reg: u8) -> Result<(), String> {
+    let locvar = self.get_var(name.clone());
+
+    if let Some(pos) = locvar {
+      self.emit(make_abc(Opcode::Move, reg.into(), pos.into(), 0));
     } else {
-      let cnst = self.resolve_const(Value::String(var))?;
-      self.emit_abx(Opcode::SetGlobal, val, cnst)
+      let pos = self.resolve_const(Value::String(name))?;
+      self.emit(make_abx(Opcode::GetGlobal, reg.into(), pos));
     }
 
     Ok(())
   }
 
-  fn resolve_const(&mut self, val: Value) -> Result<u16, CompileError> {
-    let mut pos: Option<usize> = None;
-    for (i, r#const) in self.fs.closure.consts.iter().enumerate() {
-      if val == *r#const {
-        pos = Some(i);
-        break
+  fn load_const(&mut self, val: Value, reg: u8) -> Result<(), String> {
+    let pos = self.resolve_const(val)?;
+    self.emit(make_abx(Opcode::LoadConst, reg.into(), pos));
+    Ok(())
+  }
+
+  fn fix_jmp(&mut self, jmp_pos: usize, back: bool, jmp: usize) -> Result<(), String> {
+    self.closure.code[jmp_pos] = self.jmp(back, jmp + 1)?;
+    Ok(())
+  }
+
+  fn jmp(&mut self, back: bool, to: usize) -> Result<u32, String> {
+    if to >= u16::MAX.into() {
+      return Err("block is too long".into())
+    }
+
+    Ok(make_abx(Opcode::Jmp, back as u16, to.try_into().unwrap()))
+  }
+
+  fn resolve_const(&mut self, val: Value) -> Result<u16, String> {
+    let mut pos: Option<u16> = None;
+
+    for (i, val2) in self.closure.consts.iter().enumerate() {
+      if val == *val2 {
+        pos = Some(i.try_into().unwrap()) // this shouldn't panic
       }
     }
 
     if pos.is_none() {
-      self.fs.closure.consts.push(val);
-      pos = Some(self.fs.closure.consts.len() - 1)
+      if self.closure.consts.len() >= u16::MAX.into() {
+        return Err("constant overflow".into())
+      }
+
+      self.closure.consts.push(val);
+      pos = Some((self.closure.consts.len() - 1).try_into().unwrap()); // this shouldn't panic either
     }
 
-    let pos = pos.unwrap();
+    Ok(pos.unwrap())
+  }
 
-    if pos > u16::MAX.into() {
-      Err(CompileError::ConstantOverflow)
+  fn reserve_regs(&mut self, reg: u8) -> Result<(), String> {
+    let (_, err) = self.freereg.overflowing_add(reg);
+
+    if err {
+      Err("function or expression too complex".into())
     } else {
-      Ok(pos as u16)
+      self.freereg += reg;
+      Ok(())
     }
   }
 
-  fn exp2freereg(&mut self, exp: Expr) -> Result<u8, CompileError> {
-    let reg = self.fs.freereg;
-    self.expr(exp, reg)?;
-    self.fs.freereg += 1;
-    Ok(reg)
-  }
-
-  fn patch_jmp(&mut self, jmp_pos: usize, jmp: isize) {
-    let code = &mut self.fs.closure.code;
-
-    let neg = jmp.is_negative() as u8;
-    let pos = jmp.unsigned_abs() as u16;
-    let b = (pos >> 8 & 0xFF) as u8;
-    let c = (pos & 0xFF) as u8;
-
-    code[jmp_pos - 3] = neg;
-    code[jmp_pos - 2] = b;
-    code[jmp_pos - 1] = c;
-  }
-
-  pub(super) fn new_var(&mut self, name: String) -> u8 {
-    let pos = self.fs.nvars;
-
-    self.fs.nvars += 1;
-    self.fs.vars.insert(0, VarInfo::new(name, pos));
-    pos
-  }
-
-  fn get_var(&self, name: String) -> Option<u8> {
-    for var in &self.fs.vars {
+  fn get_var(&mut self, name: String) -> Option<u8> {
+    for var in &self.vars {
       if var.name == name {
         return Some(var.pos)
       }
@@ -334,17 +409,22 @@ impl Compiler {
     None
   }
 
-  fn emit_abx(&mut self, op: Opcode, a: u8, bx: u16) {
-    let b = (bx >> 8 & 0xFF) as u8;
-    let c = (bx & 0xFF) as u8;
-    self.emit_abc(op, a, b, c);
+  pub fn register_var(&mut self, name: String) -> Result<u8, String> {
+    if self.nvars >= 255 {
+      Err("too many local variables".into())
+    } else {
+      let pos = self.nvars;
+
+      self.nvars += 1;
+      self.vars.insert(0, VarInfo::new(name, pos));
+
+      Ok(pos)
+    }
   }
 
-  fn emit_abc(&mut self, op: Opcode, a: u8, b: u8, c: u8) {
-    let code = &mut self.fs.closure.code;
-    code.push(op as u8);
-    code.push(a);
-    code.push(b);
-    code.push(c);
+  #[inline(always)]
+  fn emit(&mut self, code: u32) {
+    self.closure.code.push(code);
+    self.closure.lines.push(self.line);
   }
 }

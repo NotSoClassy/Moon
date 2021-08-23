@@ -39,5 +39,5 @@ pub enum Token {
   While,
   True,
   False,
-  Nil,
+  Nil
 }

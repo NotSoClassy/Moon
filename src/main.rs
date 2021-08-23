@@ -1,4 +1,9 @@
-use crate::parser::*;
+#![allow(dead_code)] // todo remove
+#![allow(unused_imports)]
+
+use parser::{ Parser, gen::Compiler };
+use common::Closure;
+use vm::VM;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -9,32 +14,37 @@ mod common;
 mod lexer;
 mod vm;
 
-fn main() {
-  let arg = env::args().nth(1).expect("expected file name");
-  let mut file = File::open(arg.clone()).expect("could not open file");
+fn do_file(name: String) -> Result<Closure, String> {
+  let mut file = File::open(name.clone()).expect("could not open file");
   let mut str = String::new();
 
   file.read_to_string(&mut str).expect("failure to read file");
 
-  let mut parser = Parser::new(str.into(), arg);
+  if str == "" { return Ok(Closure::new()) }
 
-  let res = parser.parse();
+  let mut parser = Parser::new(str.into(), name.clone());
+  parser.parse()?;
+
+  let mut compiler = Compiler::new(name.clone());
+  compiler.compile(parser.nodes)?;
+
+  Ok(compiler.closure)
+}
+use common::Value;
+fn main() {
+  let arg = env::args().nth(1).expect("expected file name");
+
+  let res = do_file(arg);
 
   if let Err(e) = res {
     eprintln!("{}", e);
     return
   }
 
-  let mut compiler = gen::Compiler::new();
-  let res = compiler.compile(parser.nodes);
+  let closure = res.unwrap();
+  //vm::pretty_print_code(closure.clone().code);
 
-  if let Err(e) = res {
-    eprintln!("{:?}", e);
-    return
-  }
-
-
-  let mut vm = crate::vm::VM::new(compiler.fs.closure);
+  let mut vm = VM::new(closure);
   let res = vm.run();
 
   if let Err(e) = res {
