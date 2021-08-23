@@ -25,7 +25,6 @@ pub struct Compiler {
   nvars: u8,
   vars: Vec<VarInfo>,
   name: String,
-  node: Option<Node>,
   line: usize
 }
 
@@ -63,7 +62,6 @@ impl Compiler {
       vars: Vec::new(),
       closure: closure,
       line: 1,
-      node: None,
       name
     }
   }

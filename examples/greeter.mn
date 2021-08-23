@@ -1,0 +1,8 @@
+write("What is your name?\n> ")
+let name = read()
+
+if(name == "notsoclassy") {
+  print("hey me!")
+} else {
+  print("hey " + name + "!")
+}

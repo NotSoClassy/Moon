@@ -232,7 +232,7 @@ impl VM {
             let mut vals = Vec::new();
 
             for i in base .. get_b(i) {
-              vals.push(&self.regs[i as usize])
+              vals.push(self.regs[i as usize].clone())
             }
 
             let ret = (nf.func)(vals)?;
@@ -295,10 +295,6 @@ impl VM {
   #[inline(always)]
   fn call_mut(&mut self) -> &mut CallInfo {
     self.call_stack.last_mut().unwrap()
-  }
-
-  fn pc(self) -> usize {
-    self.call().pc
   }
 
   #[inline(always)]

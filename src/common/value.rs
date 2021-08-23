@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::common::Closure;
 
-pub type BuiltIn = dyn Fn(Vec<&Value>) -> Result<Value, String>;
+pub type BuiltIn = dyn Fn(Vec<Value>) -> Result<Value, String>;
 
 pub struct RustFunc {
   pub name: String,

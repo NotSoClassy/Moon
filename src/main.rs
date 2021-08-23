@@ -1,6 +1,3 @@
-#![allow(dead_code)] // todo remove
-#![allow(unused_imports)]
-
 use parser::{ Parser, gen::Compiler };
 use common::Closure;
 use vm::VM;
@@ -30,7 +27,7 @@ fn do_file(name: String) -> Result<Closure, String> {
 
   Ok(compiler.closure)
 }
-use common::Value;
+
 fn main() {
   let arg = env::args().nth(1).expect("expected file name");
 
@@ -42,7 +39,9 @@ fn main() {
   }
 
   let closure = res.unwrap();
-  //vm::pretty_print_code(closure.clone().code);
+
+  #[cfg(debug_assertions)]
+  vm::pretty_print_code(closure.clone().code);
 
   let mut vm = VM::new(closure);
   let res = vm.run();
