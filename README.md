@@ -5,4 +5,6 @@
 
 # About
 I felt like making a programming language because it looked fun.
-There is bugs, and I most likely won't be fixing them.
+
+# TODO
+* [ ] Making functions

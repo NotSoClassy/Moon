@@ -29,20 +29,27 @@ pub fn get_bx(i: u32) -> u16 {
   | (get_c(i) as u16)
 }
 
-pub fn pretty_print_code(code: Vec<u32>) {
-  for i in code {
-    let mode = OPMODES[get_op(i) as usize];
-    let am = if get_a_mode(i) == 1 { "-" } else { "" };
+pub fn format_instruction(i: u32) -> String {
+  let mode = OPMODES[get_op(i) as usize];
+  let am = if get_a_mode(i) == 1 { "-" } else { "" };
 
-    match mode {
-      Opmode::Abc => {
-        let bm = if get_b_mode(i) == 1 { "-" } else { "" };
-        println!("{:?} {}{} {}{} {}", get_op(i), am, get_a(i), bm, get_b(i), get_c(i))
-      }
+  match mode {
+    Opmode::Abc => {
+      let bm = if get_b_mode(i) == 1 { "-" } else { "" };
+      format!("{:?} {}{} {}{} {}", get_op(i), am, get_a(i), bm, get_b(i), get_c(i))
+    }
 
-      Opmode::Abx => {
-        println!("{:?} {}{} {}", get_op(i), am, get_a(i), get_bx(i))
-      }
+    Opmode::Abx => {
+      format!("{:?} {}{} {}", get_op(i), am, get_a(i), get_bx(i))
     }
   }
+}
+
+pub fn pretty_print_code(prefix: &str, code: Vec<u32>) {
+  for i in code {
+    let s = format_instruction(i);
+    println!("{}{}", prefix, s);
+  }
+
+  print!("\n");
 }

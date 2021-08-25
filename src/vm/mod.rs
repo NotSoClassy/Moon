@@ -8,6 +8,20 @@ mod code;
 
 pub use code::pretty_print_code;
 
+pub struct NativeCallInfo {
+  base: u8,
+  top: u8
+}
+
+impl NativeCallInfo {
+  pub fn new() -> Self {
+    NativeCallInfo {
+      base: 0,
+      top: 0
+    }
+  }
+}
+
 pub struct CallInfo {
   closure: Closure,
   base: u8,
@@ -27,6 +41,7 @@ impl CallInfo {
 pub struct VM {
   call_stack: Vec<CallInfo>,
   globals: HashMap<String, Value>,
+  nci: NativeCallInfo,
   regs: Vec<Value>
 }
 
@@ -35,6 +50,7 @@ impl VM {
     VM {
       call_stack: vec![ CallInfo::new(closure, 0) ],
       globals: HashMap::new(),
+      nci: NativeCallInfo::new(),
       regs: Vec::with_capacity(20)
     }
   }
@@ -58,6 +74,19 @@ impl VM {
     let base = call.base;
     let i = self.get_i();
 
+    macro_rules! get_mut {
+      ($pos:expr) => {{
+        let pos = $pos;
+        let v = self.regs.get_mut(pos);
+        if v.is_none() {
+          self.regs.insert(pos, Value::Nil);
+          self.regs.get_mut(pos).unwrap()
+        } else {
+          v.unwrap()
+        }}
+      };
+    }
+
     macro_rules! konst {
       ($v:expr) => {
         call.closure.consts[($v) as usize].clone()
@@ -67,13 +96,7 @@ impl VM {
     macro_rules! RA_mut {
       () => {{
         let pos = (base + get_a(i)) as usize;
-        let v = self.regs.get_mut(pos);
-        if v.is_none() {
-          self.regs.insert(pos, Value::Nil);
-          self.regs.get_mut(pos).unwrap()
-        } else {
-          v.unwrap()
-        }
+        get_mut!(pos)
       }};
     }
 
@@ -92,13 +115,7 @@ impl VM {
     macro_rules! RC_mut {
       () => {{
         let pos = (base + get_c(i)) as usize;
-        let v = self.regs.get_mut(pos);
-        if v.is_none() {
-          self.regs.insert(pos, Value::Nil);
-          self.regs.get_mut(pos).unwrap()
-        } else {
-          v.unwrap()
-        }
+        get_mut!(pos)
       }};
     }
 
@@ -229,13 +246,12 @@ impl VM {
 
         match func {
           Value::NativeFunc(nf) => {
-            let mut vals = Vec::new();
+            self.nci = NativeCallInfo {
+              base,
+              top: get_b(i)
+            };
 
-            for i in base .. get_b(i) {
-              vals.push(self.regs[i as usize].clone())
-            }
-
-            let ret = (nf.func)(vals)?;
+            let ret = (nf.func)(self)?;
             *RC_mut!() = ret;
           }
 

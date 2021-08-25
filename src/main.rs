@@ -1,8 +1,9 @@
 use parser::{ Parser, gen::Compiler };
-use common::Closure;
+use common::{ Closure, Value };
 use vm::VM;
 
 use std::io::prelude::*;
+use std::process::exit;
 use std::fs::File;
 use std::env;
 
@@ -11,7 +12,14 @@ mod common;
 mod lexer;
 mod vm;
 
-fn do_file(name: String) -> Result<Closure, String> {
+enum Exec {
+  PrintBytecodeRecursive(String),
+  PrintBytecode(String),
+  DoFile(String),
+  Exit
+}
+
+fn compile_file(name: String) -> Result<Closure, String> {
   let mut file = File::open(name.clone()).expect("could not open file");
   let mut str = String::new();
 
@@ -28,26 +36,95 @@ fn do_file(name: String) -> Result<Closure, String> {
   Ok(compiler.closure)
 }
 
-fn main() {
-  let arg = env::args().nth(1).expect("expected file name");
-
-  let res = do_file(arg);
-
-  if let Err(e) = res {
-    eprintln!("{}", e);
-    return
-  }
-
-  let closure = res.unwrap();
-
-  #[cfg(debug_assertions)]
-  vm::pretty_print_code(closure.clone().code);
+fn do_file(name: String) -> Result<(), String> {
+  let closure = compile_file(name)?;
 
   let mut vm = VM::new(closure);
-  let res = vm.run();
+  vm.run()
+}
+
+fn bytecode_recursive(level: &mut usize, closure: Closure) {
+  println!("{}{}:", "\t".repeat(*level - 1), closure.name);
+  vm::pretty_print_code(&"\t".repeat(*level), closure.code);
+
+  for konst in closure.consts {
+    if let Value::Closure(c) = konst {
+      *level += 1;
+      bytecode_recursive(level, c)
+    }
+  }
+}
+
+fn get_name(name: Option<&String>, err: &str) -> Result<String, String> {
+  if let Some(name) = name {
+    Ok(name.to_string())
+  } else {
+    Err(err.to_string())
+  }
+}
+
+fn parse_args(args: Vec<String>) -> Result<Exec, String> {
+  match args.get(1) {
+    Some(v) => match v.trim() {
+
+      "-l" => {
+        let name = get_name(args.get(2), "expected file name")?;
+        Ok(Exec::PrintBytecode(name.trim().to_string()))
+      },
+
+      "-ll" => {
+        let name = get_name(args.get(2), "expected file name")?;
+        Ok(Exec::PrintBytecodeRecursive(name.trim().to_string()))
+      }
+
+      _ => {
+        Ok(Exec::DoFile(v.to_string()))
+      }
+
+    },
+
+    None => {
+      println!("
+        usage
+      ");
+      Ok(Exec::Exit)
+    }
+  }
+}
+
+fn run() -> Result<(), String> {
+  let args = env::args().collect::<Vec<String>>();
+  let exec = parse_args(args)?;
+
+  match exec {
+    Exec::DoFile(name) => {
+      do_file(name)
+    }
+
+    Exec::PrintBytecode(name) => {
+      let closure = compile_file(name)?;
+
+      println!("{}:", closure.name);
+      vm::pretty_print_code("\t", closure.code);
+      Ok(())
+    }
+
+    Exec::PrintBytecodeRecursive(name) => {
+      let closure = compile_file(name)?;
+      bytecode_recursive(&mut 1, closure);
+
+      Ok(())
+    }
+
+    Exec::Exit => Ok(())
+  }
+}
+
+fn main() {
+  let res = run();
 
   if let Err(e) = res {
     eprintln!("{}", e);
-    return
+    exit(1)
   }
 }

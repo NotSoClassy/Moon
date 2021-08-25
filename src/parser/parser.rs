@@ -76,15 +76,15 @@ impl Parser {
 
     self.check_next(Token::RightParen)?;
 
-    let body = self.stmt()?;
+    let body = self.block()?;
     let mut r#else: Option<Node> = None;
 
     if self.test_next(Token::Else) {
-      let stmt = self.stmt()?;
-      r#else = Some(self.to_node(stmt));
+      let stmt = self.block()?;
+      r#else = Some(stmt);
     }
 
-    Ok(Stmt::If(cond, Box::new((self.to_node(body), r#else))))
+    Ok(Stmt::If(cond, Box::new((body, r#else))))
   }
 
   fn fn_stmt(&mut self) -> Result<Stmt, String> {
@@ -120,9 +120,9 @@ impl Parser {
 
     self.check_next(Token::RightParen)?;
 
-    let body = self.stmt()?;
+    let body = self.block()?;
 
-    Ok(Stmt::While(cond, Box::new(self.to_node(body))))
+    Ok(Stmt::While(cond, Box::new(body)))
   }
 
   fn block_stmt(&mut self) -> Result<Stmt, String> {
@@ -137,6 +137,17 @@ impl Parser {
     self.check_next(Token::RightBrace)?;
 
     Ok(Stmt::Block(body))
+  }
+
+  fn block(&mut self) -> Result<Node, String> {
+    let stmt = self.stmt()?;
+
+    let stmt = match stmt {
+      Stmt::Block(..) => stmt,
+      _ => Stmt::Block(vec![self.to_node(stmt)])
+    };
+
+    Ok(self.to_node(stmt))
   }
 
   fn prefix_expr(&mut self) -> Result<Expr, String> {

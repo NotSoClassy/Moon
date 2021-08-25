@@ -170,7 +170,7 @@ impl Compiler {
 
     self.walk(block)?;
     let to = self.closure.code.len() - start - 1;
-    self.closure.code[jmp_pos] = self.jmp(false, to - 1)?;
+    self.closure.code[jmp_pos] = self.jmp(false, to - 2)?;
 
     let jmp = self.jmp(true, to)?;
     self.emit(jmp);
@@ -194,8 +194,9 @@ impl Compiler {
 
   fn exp2nextreg(&mut self, exp: Expr) -> Result<u8, String> {
     self.reserve_regs(1)?;
-    self.expr(exp, self.freereg - 1)?;
-    Ok(self.freereg - 1)
+    let reg = self.freereg - 1;
+    self.expr(exp, reg)?;
+    Ok(reg)
   }
 
   fn expr(&mut self, exp: Expr, reg: u8) -> Result<(), String> {
@@ -216,11 +217,14 @@ impl Compiler {
   fn call(&mut self, func: Expr, args: Vec<Expr>, reg: u8) -> Result<(), String> {
     self.expr(func, reg)?;
 
+    let mut narg = 0;
     for arg in args {
+      narg += 1;
       self.exp2nextreg(arg)?;
     }
 
-    self.emit(make_abc(Opcode::Call, reg.into(), self.freereg.into(), reg));
+    let func_reg = reg as u16;
+    self.emit(make_abc(Opcode::Call, func_reg, func_reg + narg + 1, reg));
     Ok(())
   }
 
@@ -228,7 +232,8 @@ impl Compiler {
     if op == BinOp::Assign { return self.assignment(lhs, rhs, reg) }
 
     let lhv = self.rc2reg(lhs, reg)?;
-    let rhv = self.rc2reg(rhs, reg)?;
+    let rhv = self.rc2nextreg(rhs)?;
+    self.freereg -= 1;
 
     macro_rules! arith {
       ($i:ident) => {
@@ -387,6 +392,15 @@ impl Compiler {
     Ok(pos.unwrap())
   }
 
+  fn get_var(&mut self, name: String) -> Option<u8> {
+    for var in &self.vars {
+      if var.name == name {
+        return Some(var.pos)
+      }
+    }
+    None
+  }
+
   fn reserve_regs(&mut self, reg: u8) -> Result<(), String> {
     let (_, err) = self.freereg.overflowing_add(reg);
 
@@ -398,16 +412,7 @@ impl Compiler {
     }
   }
 
-  fn get_var(&mut self, name: String) -> Option<u8> {
-    for var in &self.vars {
-      if var.name == name {
-        return Some(var.pos)
-      }
-    }
-    None
-  }
-
-  pub fn register_var(&mut self, name: String) -> Result<u8, String> {
+  fn register_var(&mut self, name: String) -> Result<u8, String> {
     if self.nvars >= 255 {
       Err("too many local variables".into())
     } else {

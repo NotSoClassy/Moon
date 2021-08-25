@@ -4,8 +4,9 @@ use std::ops::{ Add, Sub, Div, Mul };
 use std::rc::Rc;
 
 use crate::common::Closure;
+use crate::vm::VM;
 
-pub type BuiltIn = dyn Fn(Vec<Value>) -> Result<Value, String>;
+pub type BuiltIn = dyn Fn(&mut VM) -> Result<Value, String>;
 
 pub struct RustFunc {
   pub name: String,

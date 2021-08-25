@@ -1,0 +1,8 @@
+let start = clock()
+let i = 0
+
+while(i < 5_000_000) {
+  i = i + 1
+}
+
+print(clock() - start)
