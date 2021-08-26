@@ -23,6 +23,7 @@ pub fn load(vm: &mut VM) {
   new_func(vm, "clock", &clock);
   new_func(vm, "error", &error);
   new_func(vm, "read", &read);
+  new_func(vm, "len", &len);
 }
 
 fn get(vm: &mut VM, i: u8) -> Result<Value, String> {
@@ -44,6 +45,11 @@ fn expect_string(vm: &mut VM) -> Result<String, String> {
   }
 }
 
+#[inline(always)]
+fn expect_any(vm: &mut VM) -> Result<Value, String> {
+  get(vm, vm.nci.base)
+}
+
 fn get_all(vm: &mut VM) -> Vec<Value> {
   let mut vals = Vec::new();
 
@@ -52,6 +58,23 @@ fn get_all(vm: &mut VM) -> Vec<Value> {
   }
 
   vals
+}
+
+fn len(vm: &mut VM) -> Result<Value, String> {
+  let val = expect_any(vm)?;
+
+  let n = match val.clone() {
+    Value::Array(a) => Some(a.borrow().len()),
+    Value::String(s) => Some(s.len()),
+
+    _ => None
+  };
+
+  if let Some(n) = n {
+    Ok(Value::Number(n as f64))
+  } else {
+    Err(format!("cannot get len on a {} value", type_value(val)))
+  }
 }
 
 fn write(vm: &mut VM) -> Result<Value, String> {

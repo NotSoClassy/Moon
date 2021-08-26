@@ -30,7 +30,9 @@ pub enum Expr {
   String(String),
   Number(f64),
   Name(String),
+  Index(Box<Expr>, Box<Expr>),
   Bool(bool),
+  Array(Vec<Expr>),
   Nil,
 
   Call(Box<Expr>, Vec<Expr>),

@@ -23,6 +23,15 @@ pub enum Opcode {
   /// A Bx | `Global[Bx] = Reg[A]`
   SetGlobal,
 
+  /// A B | `Reg[A] = [ R[A+1] .. B ]`
+  NewArray,
+
+  /// A B | `Reg[A] = Reg[A][RC(B)]
+  GetArray,
+
+  /// A B C | `Reg[C][RC(A)] = RC(B)`
+  SetArray,
+
   /*/// A B | `UpValue[B] = Reg[A]`
   SetUpVal,*/
 
@@ -78,6 +87,8 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abc,
   Opmode::Abx,
   Opmode::Abx,
+  Opmode::Abc,
+  Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,

@@ -1,0 +1,8 @@
+let array = ['one', 'two', 'three', 'four', 'five']
+let idx = 0
+let v = nil
+
+while(v = array[idx]) {
+  idx++
+  print(v)
+}

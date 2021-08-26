@@ -25,7 +25,13 @@ pub struct Compiler {
   nvars: u8,
   vars: Vec<VarInfo>,
   name: String,
-  line: usize
+  line: usize,
+  ni: usize
+}
+
+#[inline(always)]
+fn get_mode(val: u16) -> u8 {
+  (val >> 8 & 0x1).try_into().unwrap()
 }
 
 #[inline(always)]
@@ -62,7 +68,8 @@ impl Compiler {
       vars: Vec::new(),
       closure: closure,
       line: 1,
-      name
+      name,
+      ni: 0
     }
   }
 
@@ -106,8 +113,10 @@ impl Compiler {
   }
 
   fn let_stmt(&mut self, name: String, value: Expr) -> Result<(), String> {
-    let var = self.register_var(name)?;
-    self.expr(value, var)
+    self.reserve_regs(1)?;
+    self.expr(value, self.freereg - 1)?;
+    self.register_var(name)?;
+    Ok(())
   }
 
   fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Node) -> Result<(), String> {
@@ -137,39 +146,39 @@ impl Compiler {
     self.emit(make_abc(Opcode::Test, cond.into(), 0, 0));
     self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
 
-    let jmp_pos = self.closure.code.len() - 1;
+    let jmp_pos = self.ni - 1;
     let mut jmp = if else_block.is_some() { 1 } else { 0 };
-    let start = self.closure.code.len() - 1;
+    let start = self.ni;
 
     self.walk(if_block)?;
 
-    jmp += self.closure.code.len() - start - 1;
+    jmp += self.ni - start;
 
     self.fix_jmp(jmp_pos, false, jmp)?;
 
     if let Some(block) = else_block {
       self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
-      let jmp_pos = self.closure.code.len() - 1;
-      let start = self.closure.code.len() - 1;
+      let jmp_pos = self.ni - 1;
+      let start = self.ni;
 
       self.walk(block)?;
-      self.fix_jmp(jmp_pos, false, self.closure.code.len() - start - 1)?;
+      self.fix_jmp(jmp_pos, false, self.ni - start)?;
     }
 
     Ok(())
   }
 
   fn while_stmt(&mut self, cond: Expr, block: Node) -> Result<(), String> {
-    let start = self.closure.code.len() - 1;
+    let start = self.ni;
     let cond = self.exp2nextreg(cond)?;
 
     self.emit(make_abc(Opcode::Test, cond.into(), 0, 0));
     self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
 
-    let jmp_pos = self.closure.code.len() - 1;
+    let jmp_pos = self.ni - 1;
 
     self.walk(block)?;
-    let to = self.closure.code.len() - start - 1;
+    let to = self.ni - start;
     self.closure.code[jmp_pos] = self.jmp(false, to - 2)?;
 
     let jmp = self.jmp(true, to)?;
@@ -204,6 +213,8 @@ impl Compiler {
       Expr::String(s) => self.load_const(Value::String(s), reg),
       Expr::Number(n) => self.load_const(Value::Number(n), reg),
       Expr::Name(s) => self.load_var(s, reg),
+      Expr::Array(a) => self.load_array(a, reg),
+      Expr::Index(obj, idx) => self.load_index(*obj, *idx, reg),
 
       Expr::Bool(b) => Ok(self.load_bool(b, reg)),
       Expr::Nil => Ok(self.load_nil(reg)),
@@ -212,6 +223,31 @@ impl Compiler {
       Expr::Unary(op, exp) => self.unary(op, *exp, reg),
       Expr::Call(func, args) => self.call(*func, args, reg),
     }
+  }
+
+  fn load_array(&mut self, array: Vec<Expr>, reg: u8) -> Result<(), String> {
+    let mut nelem = 0;
+    let reg = reg.into();
+    self.freeexp();
+
+    for elem in array {
+      self.exp2nextreg(elem)?;
+      nelem += 1;
+    }
+
+    self.freereg -= nelem - 1;
+
+    self.emit(make_abc(Opcode::NewArray, reg, reg + nelem as u16, 0));
+    Ok(())
+  }
+
+  fn load_index(&mut self, obj: Expr, idx: Expr, reg: u8) -> Result<(), String> {
+    self.expr(obj, reg)?;
+    let idx = self.rc2nextreg(idx)?;
+    let reg = reg.into();
+
+    self.emit(make_abc(Opcode::GetArray, reg, idx, 0));
+    Ok(())
   }
 
   fn call(&mut self, func: Expr, args: Vec<Expr>, reg: u8) -> Result<(), String> {
@@ -232,8 +268,11 @@ impl Compiler {
     if op == BinOp::Assign { return self.assignment(lhs, rhs, reg) }
 
     let lhv = self.rc2reg(lhs, reg)?;
-    let rhv = self.rc2nextreg(rhs)?;
-    self.freereg -= 1;
+    let rhv = if get_mode(lhv) == 1 {
+      self.rc2reg(rhs, reg)?
+    } else {
+      self.rc2nextreg(rhs)?
+    };
 
     macro_rules! arith {
       ($i:ident) => {
@@ -294,6 +333,13 @@ impl Compiler {
       }
 
       Ok(())
+    } else if let Expr::Index(obj, idx) = name {
+      self.expr(*obj, reg)?;
+      let a = self.rc2nextreg(*idx)?;
+      let b = self.rc2nextreg(value)?;
+
+      self.emit(make_abc(Opcode::SetArray, a, b, reg));
+      Ok(())
     } else {
       panic!("This should be impossible!");
     }
@@ -301,7 +347,9 @@ impl Compiler {
 
   fn rc2nextreg(&mut self, exp: Expr) -> Result<u16, String> {
     self.reserve_regs(1)?;
-    self.rc2reg(exp, self.freereg - 1)
+    let r = self.rc2reg(exp, self.freereg - 1)?;
+    self.freereg -= 1;
+    Ok(r)
   }
 
   fn rc2reg(&mut self, exp: Expr, reg: u8) -> Result<u16, String> {
@@ -401,6 +449,12 @@ impl Compiler {
     None
   }
 
+  fn freeexp(&mut self) {
+    if self.freereg != 0 && self.nvars <= self.freereg {
+      self.freereg -= 1;
+    }
+  }
+
   fn reserve_regs(&mut self, reg: u8) -> Result<(), String> {
     let (_, err) = self.freereg.overflowing_add(reg);
 
@@ -427,6 +481,7 @@ impl Compiler {
 
   #[inline(always)]
   fn emit(&mut self, code: u32) {
+    self.ni += 1;
     self.closure.code.push(code);
     self.closure.lines.push(self.line);
   }

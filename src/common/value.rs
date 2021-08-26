@@ -1,6 +1,7 @@
 use std::fmt::{ Debug, Formatter, Result as FmtResult };
 use std::cmp::{ PartialEq, Ordering };
 use std::ops::{ Add, Sub, Div, Mul };
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::common::Closure;
@@ -20,6 +21,7 @@ pub enum Value {
   Bool(bool),
   Closure(Closure),
   NativeFunc(Rc<RustFunc>),
+  Array(Rc<RefCell<Vec<Value>>>),
   Nil
 }
 
@@ -31,6 +33,7 @@ impl Debug for Value {
       Value::Bool(b) => write!(fmt, "{}", b),
       Value::Closure(c) => write!(fmt, "function: {}", c.name),
       Value::NativeFunc(rf) => write!(fmt, "function: {}", rf.name),
+      Value::Array(array) => write!(fmt, "{:?}", array.borrow()),
       Value::Nil => write!(fmt, "nil")
     }
   }
@@ -41,6 +44,7 @@ pub fn type_value(val: Value) -> String {
     Value::NativeFunc(..) | Value::Closure(..) => "function",
     Value::Number(..) => "number",
     Value::String(..) => "string",
+    Value::Array(..) => "array",
     Value::Bool(..) => "bool",
     Value::Nil => "nil"
   };

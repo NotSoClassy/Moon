@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::common::{ Closure, Value, Opcode, type_value };
 use code::*;
@@ -72,7 +74,7 @@ impl VM {
   fn exec(&mut self) -> Result<(), String> {
     let call = self.call();
     let base = call.base;
-    let i = self.get_i();
+    let i = call.closure.code[call.pc];
 
     macro_rules! get_mut {
       ($pos:expr) => {{
@@ -199,6 +201,46 @@ impl VM {
         }
       }
 
+      Opcode::NewArray => {
+        let (a, b) = (get_a(i), get_b(i));
+        let size = b - a;
+
+        let mut array = Vec::with_capacity(size as usize);
+
+        for i in a .. b {
+          array.push(self.regs[i as usize].clone())
+        }
+
+        *RA_mut!() = self.new_array(array);
+      }
+
+      Opcode::GetArray => {
+        let a = get_a(i);
+        let b = RCB!();
+
+        *RA_mut!() = self.index_array(self.regs[a as usize].clone(), b)?
+      }
+
+      Opcode::SetArray => {
+        let idx = RCA!();
+        let val = RCB!();
+        let val_array = RC!();
+
+        let (ref_array, idx) = self.validate_index(val_array, idx)?;
+        let mut array = ref_array.borrow_mut();
+        let len = array.len();
+
+        if idx == len {
+          array.push(val);
+        } else {
+          if let Some(v) = array.get_mut(idx) {
+            *v = val;
+          } else {
+            return Err("index out of bounds".into())
+          }
+        }
+      }
+
       Opcode::Add => arith!(+),
       Opcode::Sub => arith!(-),
       Opcode::Mul => arith!(*),
@@ -291,16 +333,42 @@ impl VM {
     }
   }
 
+  fn index_array(&self, array: Value, pos: Value) -> Result<Value, String> {
+    let (array, pos) = self.validate_index(array, pos)?;
+    let array = array.borrow();
+
+    Ok(array.get(pos).unwrap_or(&Value::Nil).clone())
+  }
+
+  fn validate_index(&self, array: Value, idx: Value) -> Result<(Rc<RefCell<Vec<Value>>>, usize), String> {
+    if let Value::Array(arr) = array {
+      if let Value::Number(pos) = idx {
+        if pos.floor() == pos {
+          if pos.is_sign_positive() {
+            Ok((arr, pos as usize))
+          } else {
+            Err("array index must be positive".into())
+          }
+        } else {
+          Err("array index must be an integer".into())
+        }
+      } else {
+        Err(format!("attempt to index array with a {}", type_value(idx)))
+      }
+    } else {
+      Err(format!("attempt to index a {} value", type_value(array)))
+    }
+  }
+
+  #[inline(always)]
+  fn new_array(&self, vals: Vec<Value>) -> Value {
+    Value::Array(Rc::new(RefCell::new(vals)))
+  }
+
   #[inline(always)]
   fn is_end_of_code(&self) -> bool {
     let call = self.call_stack.last().unwrap();
     call.pc < call.closure.code.len()
-  }
-
-  #[inline(always)]
-  fn get_i(&self) -> u32 {
-    let call = self.call();
-    call.closure.code[call.pc]
   }
 
   #[inline(always)]

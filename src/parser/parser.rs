@@ -77,14 +77,14 @@ impl Parser {
     self.check_next(Token::RightParen)?;
 
     let body = self.block()?;
-    let mut r#else: Option<Node> = None;
+    let mut else_block: Option<Node> = None;
 
     if self.test_next(Token::Else) {
       let stmt = self.block()?;
-      r#else = Some(stmt);
+      else_block = Some(stmt);
     }
 
-    Ok(Stmt::If(cond, Box::new((body, r#else))))
+    Ok(Stmt::If(cond, Box::new((body, else_block))))
   }
 
   fn fn_stmt(&mut self) -> Result<Stmt, String> {
@@ -171,9 +171,13 @@ impl Parser {
 
     loop {
       match self.token {
-        // index exp, if some sort of hashmap or array implemented
+        Token::LeftSquare => {
+          self.next();
+          exp = self.index(exp)?;
+        }
 
         Token::LeftParen => {
+          self.next();
           exp = self.call(exp)?;
         }
 
@@ -194,6 +198,7 @@ impl Parser {
       Token::String => simple!(String, self.lex.buf.clone()),
       Token::Number => simple!(Number, self.lex.buf.parse().unwrap()), // this shouldn't error
       Token::Nil => { self.next(); Ok(Expr::Nil) },
+      Token::LeftSquare => { self.next(); self.array() }
 
       _ => self.primary_expr()
     }
@@ -230,22 +235,39 @@ impl Parser {
     self.sub_expr(0)
   }
 
-  fn call(&mut self, func: Expr) -> Result<Expr, String> {
-    self.next();
-    let mut args = Vec::new();
+  fn index(&mut self, exp: Expr) -> Result<Expr, String> {
+    let idx = self.expr()?;
+    self.check_next(Token::RightSquare)?;
+    Ok(Expr::Index(exp.boxed(), idx.boxed()))
+  }
 
-    if self.token != Token::RightParen {
-      args.push(self.expr()?);
+  fn array(&mut self) -> Result<Expr, String> {
+    let elems = self.exp_list(Token::RightSquare)?;
+
+    Ok(Expr::Array(elems))
+  }
+
+  fn call(&mut self, func: Expr) -> Result<Expr, String> {
+    let args = self.exp_list(Token::RightParen)?;
+
+    Ok(Expr::Call(func.boxed(), args))
+  }
+
+  fn exp_list(&mut self, end: Token) -> Result<Vec<Expr>, String> {
+    let mut exps = Vec::new();
+
+    if self.token != end {
+      exps.push(self.expr()?);
 
       while self.token == Token::Comma {
         self.next();
-        args.push(self.expr()?)
+        exps.push(self.expr()?);
       }
     }
 
-    self.check_next(Token::RightParen)?;
+    self.check_next(end)?;
 
-    Ok(Expr::Call(func.boxed(), args))
+    Ok(exps)
   }
 
   fn get_unop(&self) -> Option<UnOp> {
@@ -281,7 +303,7 @@ impl Parser {
     if let Expr::Binary(lhs, op, _rhs) = e {
       match op {
         BinOp::Assign => {
-          if !matches!(*lhs, Expr::Name(_)) {
+          if !matches!(*lhs, Expr::Name(..) | Expr::Index(..)) {
             return Err(self.error("unexpected token", Token::Equal))
           }
         }

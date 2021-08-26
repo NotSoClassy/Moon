@@ -73,6 +73,7 @@ fn parse_args(args: Vec<String>) -> Result<Exec, String> {
       },
 
       "-ll" => {
+        println!("{}", v);
         let name = get_name(args.get(2), "expected file name")?;
         Ok(Exec::PrintBytecodeRecursive(name.trim().to_string()))
       }
