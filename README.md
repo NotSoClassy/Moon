@@ -7,4 +7,5 @@
 I felt like making a programming language because it looked fun.
 
 # TODO
-* [ ] Making functions
+* [x] Making functions
+* [ ] Compound operators? maybe `++` and `--`

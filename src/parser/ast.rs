@@ -44,8 +44,8 @@ pub enum Expr {
 pub enum Stmt {
   Let(String, Expr),
   If(Expr, Box<(Node, Option<Node>)>),
-  /// fn body must be `Stmt::Block`
   Fn(String, Vec<String>, Box<Node>),
+  Return(Expr),
   While(Expr, Box<Node>),
   Block(Vec<Node>),
   Expr(Expr)

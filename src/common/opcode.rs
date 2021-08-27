@@ -70,6 +70,9 @@ pub enum Opcode {
   /// A B C | `Reg[C] = Reg[A](Reg(A+1) .. Reg(B))`
   Call,
 
+  /// A B | `return B && nil || Reg[A]`
+  Return,
+
   /// A | `Reg[A..] = nil`
   Close
 }
@@ -102,6 +105,7 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abx,
+  Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc

@@ -81,9 +81,17 @@ impl Lexer {
       '+' => next_ret!(Token::Plus),
       '-' => next_ret!(Token::Dash),
       '*' => next_ret!(Token::Star),
-      '/' => next_ret!(Token::Slash),
       ';' => next_ret!(Token::Semi),
       ',' => next_ret!(Token::Comma),
+      '/' => {
+        self.next();
+        if self.current == '/' || self.current == '*' {
+          self.comment()?;
+          self.lex()
+        } else {
+          return Ok(Token::Slash)
+        }
+      },
 
       '=' => cmp_op!(Token::Equal, Token::Eq),
       '<' => cmp_op!(Token::Gt, Token::Ge),
@@ -121,6 +129,35 @@ impl Lexer {
           Err(self.error("unexpected token", Token::SC(self.current)))
         }
       }
+    }
+  }
+
+  fn comment(&mut self) -> Result<(), String> {
+    match self.current {
+      '*' => {
+        self.next();
+        loop {
+          if self.current == '\0' { return Err(self.error("unfinished comment", Token::Eof)) }
+          if self.current == '*' {
+            self.next();
+            if self.current == '/' {
+              self.next();
+              return Ok(())
+            }
+          }
+          self.next();
+        }
+      },
+
+      '/' => {
+        while self.current != '\n' && self.current != '\0' {
+          self.next();
+        }
+        self.next();
+        Ok(())
+      },
+
+      _ => panic!("this is impossible")
     }
   }
 
@@ -247,6 +284,7 @@ impl Lexer {
       "if" => Some(Token::If),
       "else" => Some(Token::Else),
       "fn" => Some(Token::Fn),
+      "return" => Some(Token::Return),
       "while" => Some(Token::While),
       "true" => Some(Token::True),
       "false" => Some(Token::False),

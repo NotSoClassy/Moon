@@ -48,6 +48,7 @@ impl Parser {
 
     match self.token {
       Token::LeftBrace => stmt!(self.block_stmt()?),
+      Token::Return => stmt!(self.return_stmt()?),
       Token::While => stmt!(self.while_stmt()?),
       Token::Let => stmt!(self.let_stmt()?),
       Token::If => stmt!(self.if_stmt()?),
@@ -111,6 +112,13 @@ impl Parser {
     let body = self.block_stmt()?;
 
     Ok(Stmt::Fn(name, params, Box::new(self.to_node(body))))
+  }
+
+  fn return_stmt(&mut self) -> Result<Stmt, String> {
+    self.next();
+    let val = self.expr()?;
+
+    Ok(Stmt::Return(val))
   }
 
   fn while_stmt(&mut self) -> Result<Stmt, String> {

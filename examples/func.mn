@@ -1,0 +1,6 @@
+fn test(a, b, c) {
+  a = a * c - b
+  return a / b + c
+}
+
+print(test(32, 65, 64))

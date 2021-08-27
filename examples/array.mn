@@ -3,6 +3,6 @@ let idx = 0
 let v = nil
 
 while(v = array[idx]) {
-  idx++
+  idx = idx + 1
   print(v)
 }

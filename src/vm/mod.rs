@@ -102,15 +102,27 @@ impl VM {
       }};
     }
 
+    macro_rules! A {
+      () => {
+        base + get_a(i)
+      };
+    }
+
     macro_rules! RA {
       () => {
-        self.regs[(base + get_a(i)) as usize].clone()
+        self.regs[A!() as usize].clone()
+      };
+    }
+
+    macro_rules! B {
+      () => {
+        base + get_b(i)
       };
     }
 
     macro_rules! RB {
       () => {
-        self.regs[(base + get_b(i)) as usize].clone()
+        self.regs[B!() as usize].clone()
       };
     }
 
@@ -121,9 +133,15 @@ impl VM {
       }};
     }
 
+    macro_rules! C {
+      () => {
+        base + get_c(i)
+      };
+    }
+
     macro_rules! RC {
       () => {
-        self.regs[(base + get_c(i)) as usize].clone()
+        self.regs[C!() as usize].clone()
       };
     }
 
@@ -284,32 +302,56 @@ impl VM {
 
       Opcode::Call => {
         let func = RA!();
-        let base = get_a(i) + 1;
+        let base = A!() + 1;
+        let b = B!();
 
         match func {
           Value::NativeFunc(nf) => {
             self.nci = NativeCallInfo {
               base,
-              top: get_b(i)
+              top: b
             };
 
             let ret = (nf.func)(self)?;
             *RC_mut!() = ret;
           }
 
-          Value::Closure(_c) => {
-            todo!();
-            /*let call = CallInfo::new(c, base);
+          Value::Closure(c) => {
+            for i in base ..= b {
+              if self.regs.get(i as usize).is_none() {
+                self.regs.push(Value::Nil);
+              }
+            }
+
+            let call = CallInfo::new(c, base);
             self.call_stack.push(call);
-            return Ok(()) // don't skip first instruction of new function*/
+            return Ok(()) // don't skip first instruction of new function
           }
 
           _ => return Err(format!("cannot call a {} value", type_value(func)))
         }
       }
 
+      Opcode::Return => {
+        let v = if get_b(i) == 1 {
+          Value::Nil
+        } else {
+          RA!()
+        };
+
+        let base = if base == 0 { base } else { base - 1 };
+        self.regs[base as usize] = v;
+
+        self.call_stack.pop();
+        if self.is_end_of_code() {
+          *self.pc_mut() += 1;
+        }
+
+        return Ok(())
+      }
+
       Opcode::Close => {
-        for i in get_a(i) as usize .. self.regs.len() {
+        for i in A!() as usize .. self.regs.len() {
           self.regs[i] = Value::Nil
         }
       }
@@ -367,8 +409,12 @@ impl VM {
 
   #[inline(always)]
   fn is_end_of_code(&self) -> bool {
-    let call = self.call_stack.last().unwrap();
-    call.pc < call.closure.code.len()
+    let call = self.call_stack.last();
+    if let Some(call) = call {
+      call.pc < call.closure.code.len()
+    } else {
+      false
+    }
   }
 
   #[inline(always)]

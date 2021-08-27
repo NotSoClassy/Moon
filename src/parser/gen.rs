@@ -81,7 +81,13 @@ impl Compiler {
       self.freereg = self.nvars;
     }
 
+    self.final_ret();
+
     Ok(())
+  }
+
+  fn final_ret(&mut self) {
+    self.emit(make_abc(Opcode::Return, 0, 1, 0))
   }
 
   #[inline(always)]
@@ -102,6 +108,7 @@ impl Compiler {
 
   fn stmt(&mut self, stmt: Stmt) -> Result<(), String> {
     match stmt {
+      Stmt::Return(val) => self.return_stmt(val),
       Stmt::While(cond, block) => self.while_stmt(cond, *block),
       Stmt::Block(block) => self.block_stmt(block),
       Stmt::Let(name, value) => self.let_stmt(name, value),
@@ -136,6 +143,13 @@ impl Compiler {
     let var = self.register_var(name)?;
     self.load_const(closure, var)?;
 
+    Ok(())
+  }
+
+  fn return_stmt(&mut self, val: Expr) -> Result<(), String> {
+    let val = self.exp2nextreg(val)?;
+
+    self.emit(make_abc(Opcode::Return, val.into(), 0, 0));
     Ok(())
   }
 

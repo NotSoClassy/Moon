@@ -45,6 +45,7 @@ fn do_file(name: String) -> Result<(), String> {
 
 fn bytecode_recursive(level: &mut usize, closure: Closure) {
   println!("{}{}:", "\t".repeat(*level - 1), closure.name);
+  println!("{:?}",closure.consts);
   vm::pretty_print_code(&"\t".repeat(*level), closure.code);
 
   for konst in closure.consts {
@@ -73,7 +74,6 @@ fn parse_args(args: Vec<String>) -> Result<Exec, String> {
       },
 
       "-ll" => {
-        println!("{}", v);
         let name = get_name(args.get(2), "expected file name")?;
         Ok(Exec::PrintBytecodeRecursive(name.trim().to_string()))
       }
@@ -85,9 +85,11 @@ fn parse_args(args: Vec<String>) -> Result<Exec, String> {
     },
 
     None => {
-      println!("
-        usage
-      ");
+      println!("{} [options] filename
+      Options:
+          -l   print bytecode of main function
+          -ll  print bytecode of main function and all sub functions
+      ", args.get(0).unwrap_or(&"moon".to_string()));
       Ok(Exec::Exit)
     }
   }
