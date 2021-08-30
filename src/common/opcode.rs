@@ -15,7 +15,10 @@ pub enum Opcode {
   LoadNil,
 
   /*/// A B | `Reg[A] = UpValues[B]`
-  GetUpVal,*/
+  GetUpVal,
+
+  /// A B | `UpValue[A] = Reg[B]`
+  SetUpVal,*/
 
   /// A Bx | `Reg[A] = Global[Const[Bx]]`
   GetGlobal,
@@ -31,9 +34,6 @@ pub enum Opcode {
 
   /// A B C | `Reg[C][RC(A)] = RC(B)`
   SetArray,
-
-  /*/// A B | `UpValue[B] = Reg[A]`
-  SetUpVal,*/
 
   /// A B C | `Reg[C] = RC[A] + RC[B]`
   Add,
@@ -105,6 +105,7 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abx,
+  Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,

@@ -1,5 +1,5 @@
 use parser::{ Parser, gen::Compiler };
-use common::{ Closure, Value };
+use common::Closure;
 use vm::VM;
 
 use std::io::prelude::*;
@@ -25,7 +25,7 @@ fn compile_file(name: String) -> Result<Closure, String> {
 
   file.read_to_string(&mut str).expect("failure to read file");
 
-  if str == "" { return Ok(Closure::new()) }
+  if str == "" { return Ok(Closure::new("main".into(), name)) }
 
   let mut parser = Parser::new(str.into(), name.clone());
   parser.parse()?;
@@ -41,19 +41,6 @@ fn do_file(name: String) -> Result<(), String> {
 
   let mut vm = VM::new(closure);
   vm.run()
-}
-
-fn bytecode_recursive(level: &mut usize, closure: Closure) {
-  println!("{}{}:", "\t".repeat(*level - 1), closure.name);
-  println!("{:?}",closure.consts);
-  vm::pretty_print_code(&"\t".repeat(*level), closure.code);
-
-  for konst in closure.consts {
-    if let Value::Closure(c) = konst {
-      *level += 1;
-      bytecode_recursive(level, c)
-    }
-  }
 }
 
 fn get_name(name: Option<&String>, err: &str) -> Result<String, String> {
@@ -107,14 +94,13 @@ fn run() -> Result<(), String> {
     Exec::PrintBytecode(name) => {
       let closure = compile_file(name)?;
 
-      println!("{}:", closure.name);
-      vm::pretty_print_code("\t", closure.code);
+      vm::pretty_print_closure(closure, false);
       Ok(())
     }
 
     Exec::PrintBytecodeRecursive(name) => {
       let closure = compile_file(name)?;
-      bytecode_recursive(&mut 1, closure);
+      vm::pretty_print_closure(closure, true);
 
       Ok(())
     }

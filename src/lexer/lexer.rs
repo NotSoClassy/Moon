@@ -103,7 +103,7 @@ impl Lexer {
       '\'' | '"' => resolve(self.read_string(self.current), Token::String),
 
 
-      '\n' | '\r' => {
+      '\n' => {
         self.line += 1;
         self.next();
         self.lex()

@@ -5,14 +5,14 @@ use std::rc::Rc;
 use crate::common::{ Closure, Value, Opcode, type_value };
 use code::*;
 
+pub mod code;
 mod builtin;
-mod code;
 
-pub use code::pretty_print_code;
+pub use code::pretty_print_closure;
 
 pub struct NativeCallInfo {
-  base: u8,
-  top: u8
+  base: usize,
+  top: usize
 }
 
 impl NativeCallInfo {
@@ -26,12 +26,12 @@ impl NativeCallInfo {
 
 pub struct CallInfo {
   closure: Closure,
-  base: u8,
+  base: usize,
   pc: usize
 }
 
 impl CallInfo {
-  pub fn new(closure: Closure, base: u8) -> Self {
+  pub fn new(closure: Closure, base: usize) -> Self {
     CallInfo {
       closure,
       base,
@@ -44,7 +44,8 @@ pub struct VM {
   call_stack: Vec<CallInfo>,
   globals: HashMap<String, Value>,
   nci: NativeCallInfo,
-  regs: Vec<Value>
+  regs: Vec<Value>,
+  ncalls: usize
 }
 
 impl VM {
@@ -53,7 +54,8 @@ impl VM {
       call_stack: vec![ CallInfo::new(closure, 0) ],
       globals: HashMap::new(),
       nci: NativeCallInfo::new(),
-      regs: Vec::with_capacity(20)
+      regs: Vec::with_capacity(20),
+      ncalls: 0
     }
   }
 
@@ -97,14 +99,14 @@ impl VM {
 
     macro_rules! RA_mut {
       () => {{
-        let pos = (base + get_a(i)) as usize;
+        let pos = base + get_a(i) as usize;
         get_mut!(pos)
       }};
     }
 
     macro_rules! A {
       () => {
-        base + get_a(i)
+        base + get_a(i) as usize
       };
     }
 
@@ -116,7 +118,7 @@ impl VM {
 
     macro_rules! B {
       () => {
-        base + get_b(i)
+        base + get_b(i) as usize
       };
     }
 
@@ -128,14 +130,14 @@ impl VM {
 
     macro_rules! RC_mut {
       () => {{
-        let pos = (base + get_c(i)) as usize;
+        let pos = base + get_c(i) as usize;
         get_mut!(pos)
       }};
     }
 
     macro_rules! C {
       () => {
-        base + get_c(i)
+        base + get_c(i) as usize
       };
     }
 
@@ -150,7 +152,7 @@ impl VM {
         if get_a_mode(i) == 1 {
           konst!(get_a(i))
         } else {
-          RC!()
+          RA!()
         }
       };
     }
@@ -323,8 +325,16 @@ impl VM {
               }
             }
 
+            self.regs.insert(b, Value::Closure(c.clone()));
+
             let call = CallInfo::new(c, base);
             self.call_stack.push(call);
+            self.ncalls += 1;
+
+            if self.ncalls >= 20000 {
+              return Err("stack overflow".into())
+            }
+
             return Ok(()) // don't skip first instruction of new function
           }
 
@@ -336,7 +346,7 @@ impl VM {
         let v = if get_b(i) == 1 {
           Value::Nil
         } else {
-          RA!()
+          RCA!()
         };
 
         let base = if base == 0 { base } else { base - 1 };

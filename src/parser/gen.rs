@@ -1,10 +1,12 @@
 use std::convert::TryInto;
 
+use crate::vm::code::get_op;
 use crate::common::{ Closure, Opcode, Value };
 use crate::parser::ast::{
   Node, Stmt, Expr, UnOp, BinOp
 };
 
+#[derive(Clone, Debug)]
 pub struct VarInfo {
   pub name: String,
   pub pos: u8
@@ -59,8 +61,7 @@ fn make_abc(op: Opcode, a: u16, b: u16, c: u8) -> u32 {
 
 impl Compiler {
   pub fn new(name: String) -> Self {
-    let mut closure = Closure::new();
-    closure.name = name.clone();
+    let closure = Closure::new("main".into(), name.clone());
 
     Compiler {
       nvars: 0,
@@ -81,13 +82,13 @@ impl Compiler {
       self.freereg = self.nvars;
     }
 
-    self.final_ret();
-
     Ok(())
   }
 
   fn final_ret(&mut self) {
-    self.emit(make_abc(Opcode::Return, 0, 1, 0))
+    if get_op(*self.closure.code.last().unwrap_or(&0)) != Opcode::Return {
+      self.emit(make_abc(Opcode::Return, 0, 1, 0))
+    }
   }
 
   #[inline(always)]
@@ -127,27 +128,36 @@ impl Compiler {
   }
 
   fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Node) -> Result<(), String> {
+    let start_line = self.line;
+
     let mut compiler = Compiler::new(self.name.clone());
     compiler.closure.name = name.clone();
     compiler.closure.nparams = params.len() as u8;
+
+    let var = self.register_var(name.clone())?;
 
     for param in params {
       compiler.register_var(param)?;
     }
 
+    compiler.register_var(name)?;
+
     compiler.freereg = compiler.nvars;
-    compiler.walk(body)?;
+    compiler.compile(vec![body])?;
+    compiler.final_ret();
 
     let closure = Value::Closure(compiler.closure);
+    let old = self.line;
 
-    let var = self.register_var(name)?;
+    self.line = start_line;
     self.load_const(closure, var)?;
+    self.line = old;
 
     Ok(())
   }
 
   fn return_stmt(&mut self, val: Expr) -> Result<(), String> {
-    let val = self.exp2nextreg(val)?;
+    let val = self.rc2nextreg(val)?;
 
     self.emit(make_abc(Opcode::Return, val.into(), 0, 0));
     Ok(())
@@ -193,7 +203,7 @@ impl Compiler {
 
     self.walk(block)?;
     let to = self.ni - start;
-    self.closure.code[jmp_pos] = self.jmp(false, to - 2)?;
+    self.closure.code[jmp_pos] = self.jmp(false, to - 1)?;
 
     let jmp = self.jmp(true, to)?;
     self.emit(jmp);
@@ -209,6 +219,10 @@ impl Compiler {
 
     if close != 0 {
       self.nvars -= close;
+      for _ in 0 .. close {
+        self.vars.remove(0);
+      }
+
       self.emit(make_abc(Opcode::Close, close.into(), 0, 0));
     }
 
@@ -385,6 +399,16 @@ impl Compiler {
     match exp.clone() {
       Expr::String(s) => RC!(String, s),
       Expr::Number(n) => RC!(Number, n),
+      Expr::Name(n) => {
+        let v = self.get_var(n);
+
+        if let Some(var) = v {
+          return Ok(var.into())
+        } else {
+          self.expr(exp, reg)?;
+          return Ok(reg.into());
+        }
+      }
 
       _ => {
         self.expr(exp, reg)?;

@@ -26,7 +26,7 @@ pub fn load(vm: &mut VM) {
   new_func(vm, "len", &len);
 }
 
-fn get(vm: &mut VM, i: u8) -> Result<Value, String> {
+fn get(vm: &mut VM, i: usize) -> Result<Value, String> {
   if i > vm.nci.top {
     Err("expected value".into())
   } else {

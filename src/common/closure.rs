@@ -5,6 +5,7 @@ use crate::common::Value;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure {
   pub name: String,
+  pub file_name: String,
   pub lines: Vec<usize>,
   //pub upvals: Vec<Rc<RefCell<Value>>>,
   pub code: Vec<u32>,
@@ -13,9 +14,10 @@ pub struct Closure {
 }
 
 impl Closure {
-  pub fn new() -> Self {
+  pub fn new(name: String, file_name: String) -> Self {
     Closure {
-      name: "0".into(),
+      name,
+      file_name,
       lines: Vec::new(),
       //upvals: Vec::new(),
       code: Vec::new(),

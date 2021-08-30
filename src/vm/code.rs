@@ -1,4 +1,4 @@
-use crate::common::{ Opcode, Opmode, OPMODES };
+use crate::common::{ Opcode, Opmode, OPMODES, Closure, Value };
 
 pub fn get_op(i: u32) -> Opcode {
   Opcode::from((i >> 26 & 0x3F) as u8)
@@ -45,11 +45,44 @@ pub fn format_instruction(i: u32) -> String {
   }
 }
 
-pub fn pretty_print_code(prefix: &str, code: Vec<u32>) {
-  for i in code {
-    let s = format_instruction(i);
-    println!("{}{}", prefix, s);
+fn get_fn_info(closure: Closure) -> String {
+  let mut nfn = 0;
+
+  for val in &closure.consts {
+    if let Value::Closure(..) = val { nfn += 1 }
   }
 
-  print!("\n");
+  format!("{} <{}> ({} instructions)\n{} params, {} constants, {} functions", closure.name, closure.file_name, closure.code.len(), closure.nparams, closure.consts.len() - nfn, nfn)
+}
+
+pub fn pretty_print_closure(closure: Closure, recursive: bool) {
+  let mut pc = 0;
+
+  println!("{}", get_fn_info(closure.clone()));
+
+  for (idx, instruction) in closure.code.iter().enumerate() {
+    let s = format_instruction(*instruction);
+
+    println!("\t{}\t[{}]\t{}", idx + 1, closure.lines[pc], s);
+    pc += 1;
+  }
+
+  let mut funcs = Vec::new();
+
+  let consts = closure.consts.iter().filter(| v | {
+    if let Value::Closure(c) = v { funcs.push(c); false } else { true }
+  }).collect::<Vec<&Value>>();
+
+  println!("constants ({})", consts.len());
+
+  for (idx, konst) in consts.iter().enumerate() {
+    println!("\t{}\t{:?}", idx + 1, konst)
+  }
+
+  if recursive {
+    for func in funcs {
+      println!();
+      pretty_print_closure(func.clone(), true)
+    }
+  }
 }

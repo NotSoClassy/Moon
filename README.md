@@ -8,4 +8,6 @@ I felt like making a programming language because it looked fun.
 
 # TODO
 * [x] Making functions
+* [ ] Upvalues
 * [ ] Compound operators? maybe `++` and `--`
+* [x] Better bytecode viewing

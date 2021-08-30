@@ -4,6 +4,7 @@ use std::process::exit;
 
 pub struct Parser {
   lex: Lexer,
+  line: usize,
   token: Token,
   pub nodes: Vec<Node>
 }
@@ -15,6 +16,7 @@ impl Parser {
 
     Parser {
       token: lexer.token,
+      line: 1,
       lex: lexer,
       nodes: Vec::new()
     }
@@ -34,7 +36,7 @@ impl Parser {
 
   fn to_node(&self, stmt: Stmt) -> Node {
     Node {
-      line: self.lex.line,
+      line: self.line,
       stmt
     }
   }
@@ -42,7 +44,12 @@ impl Parser {
   fn stmt(&mut self) -> Result<Stmt, String> {
     macro_rules! stmt {
       ($i:expr) => {
-        { let res = $i; self.test_next(Token::Semi); return Ok(res) }
+        {
+          self.line = self.lex.line;
+          let res = $i;
+          self.test_next(Token::Semi);
+          return Ok(res)
+        }
       };
     }
 
