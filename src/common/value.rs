@@ -25,6 +25,16 @@ pub enum Value {
   Nil
 }
 
+#[derive(PartialEq)]
+pub enum Type {
+  String,
+  Number,
+  Bool,
+  Function,
+  Array,
+  Nil
+}
+
 impl Debug for Value {
   fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
     match self {
@@ -39,66 +49,81 @@ impl Debug for Value {
   }
 }
 
-pub fn type_value(val: Value) -> String {
-  let s = match val {
-    Value::NativeFunc(..) | Value::Closure(..) => "function",
-    Value::Number(..) => "number",
-    Value::String(..) => "string",
-    Value::Array(..) => "array",
-    Value::Bool(..) => "bool",
-    Value::Nil => "nil"
-  };
+impl Debug for Type {
+  fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
+    let str = match self {
+      Type::String => "string",
+      Type::Number => "number",
+      Type::Bool => "bool",
+      Type::Function => "function",
+      Type::Array => "array",
+      Type::Nil => "nil"
+    };
 
-  s.to_string()
+    write!(fmt, "{}", str)
+  }
+}
+
+impl From<&Value> for Type {
+  fn from(val: &Value) -> Self {
+    match val {
+      Value::NativeFunc(..) | Value::Closure(..) => Type::Function,
+      Value::String(..) => Type::String,
+      Value::Number(..) => Type::Number,
+      Value::Bool(..) => Type::Bool,
+      Value::Array(..) => Type::Array,
+      Value::Nil => Type::Nil
+    }
+  }
 }
 
 impl Add for Value {
-  fn add(self, rhs: Value) -> Result<Value, String> {
+  fn add(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
       (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs + &rhs)),
 
-      _ => Err(format!("cannot add {} and {}", type_value(self), type_value(rhs)))
+      _ => Err(())
     }
   }
 
-  type Output = Result<Value, String>;
+  type Output = Result<Value, ()>;
 }
 
 impl Sub for Value {
-  fn sub(self, rhs: Value) -> Result<Value, String> {
+  fn sub(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs - rhs)),
 
-      _ => Err(format!("cannot sub {} and {}", type_value(self), type_value(rhs)))
+      _ => Err(())
     }
   }
 
-  type Output = Result<Value, String>;
+  type Output = Result<Value, ()>;
 }
 
 impl Mul for Value {
-  fn mul(self, rhs: Value) -> Result<Value, String> {
+  fn mul(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs * rhs)),
 
-      _ => Err(format!("cannot multiply {} and {}", type_value(self), type_value(rhs)))
+      _ => Err(())
     }
   }
 
-  type Output = Result<Value, String>;
+  type Output = Result<Value, ()>;
 }
 
 impl Div for Value {
-  fn div(self, rhs: Value) -> Result<Value, String> {
+  fn div(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs / rhs)),
 
-      _ => Err(format!("cannot divide {} and {}", type_value(self), type_value(rhs)))
+      _ => Err(())
     }
   }
 
-  type Output = Result<Value, String>;
+  type Output = Result<Value, ()>;
 }
 
 impl Debug for RustFunc {

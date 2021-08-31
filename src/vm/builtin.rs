@@ -3,7 +3,7 @@ use std::io::Write;
 use std::rc::Rc;
 use std::io;
 
-use crate::common::{ Value, BuiltIn, RustFunc, type_value };
+use crate::common::{ Value, BuiltIn, RustFunc, Type };
 use crate::vm::VM;
 
 fn new_func(vm: &mut VM, name: &str, func: &'static BuiltIn) {
@@ -41,7 +41,7 @@ fn expect_string(vm: &mut VM) -> Result<String, String> {
   if let Value::String(s) = v {
     Ok(s.clone())
   } else {
-    Err(format!("expected string got {}", type_value(v.clone())))
+    Err(format!("expected string got {:?}", Type::from(&v)))
   }
 }
 
@@ -73,7 +73,7 @@ fn len(vm: &mut VM) -> Result<Value, String> {
   if let Some(n) = n {
     Ok(Value::Number(n as f64))
   } else {
-    Err(format!("cannot get len on a {} value", type_value(val)))
+    Err(format!("cannot get len on a {:?} value", Type::from(&val)))
   }
 }
 

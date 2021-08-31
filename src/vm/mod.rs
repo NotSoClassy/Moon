@@ -2,13 +2,15 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::common::{ Closure, Value, Opcode, type_value };
+use crate::common::{ Closure, Value, Opcode, Type };
 use code::*;
 
 pub mod code;
 mod builtin;
+mod error;
 
 pub use code::pretty_print_closure;
+use error::RuntimeError;
 
 pub struct NativeCallInfo {
   base: usize,
@@ -24,8 +26,10 @@ impl NativeCallInfo {
   }
 }
 
+#[derive(Debug)]
 pub struct CallInfo {
   closure: Closure,
+  is_builtin: bool,
   base: usize,
   pc: usize
 }
@@ -34,6 +38,7 @@ impl CallInfo {
   pub fn new(closure: Closure, base: usize) -> Self {
     CallInfo {
       closure,
+      is_builtin: false,
       base,
       pc: 0
     }
@@ -66,14 +71,20 @@ impl VM {
       let res = self.exec();
 
       if let Err(e) = res {
-        return Err(self.error(e))
+        let err = e.to_error(&self.call_stack);
+
+        if let Some(v) = self.call_stack.last() {
+          if v.is_builtin { self.call_stack.pop(); }
+        }
+
+        return Err(self.error(err))
       }
     }
 
     Ok(())
   }
 
-  fn exec(&mut self) -> Result<(), String> {
+  fn exec(&mut self) -> Result<(), RuntimeError> {
     let call = self.call();
     let base = call.base;
     let i = call.closure.code[call.pc];
@@ -171,8 +182,16 @@ impl VM {
       ($op:tt) => {{
         let rca = RCA!();
         let rcb = RCB!();
+        let t1 = Type::from(&rca);
+        let t2 = Type::from(&rcb);
 
-        *RC_mut!() = (rca $op rcb)?;
+        let res = (rca $op rcb);
+
+        if let Err(()) = res {
+          return Err(RuntimeError::TypeError("perform an arithmetic".into(), t1, Some(t2)))
+        } else {
+          *RC_mut!() = res.unwrap()
+        }
       }};
     }
 
@@ -208,7 +227,7 @@ impl VM {
         if let Value::String(str) = k {
           *RA_mut!() = self.globals.get(&str).unwrap_or(&Value::Nil).clone();
         } else {
-          return Err("global index must be a string".into())
+          return Err(RuntimeError::TypeError("index globals with".into(), Type::from(&k), None))
         }
       }
 
@@ -217,7 +236,7 @@ impl VM {
         if let Value::String(str) = k {
           self.globals.insert(str, RA!());
         } else {
-          return Err("global index must be a string".into())
+          return Err(RuntimeError::TypeError("index globals with".into(), Type::from(&k), None))
         }
       }
 
@@ -256,7 +275,7 @@ impl VM {
           if let Some(v) = array.get_mut(idx) {
             *v = val;
           } else {
-            return Err("index out of bounds".into())
+            return Err(RuntimeError::ArrayIdxBound)
           }
         }
       }
@@ -277,7 +296,7 @@ impl VM {
         if let Value::Number(n) = rcb {
           *RA_mut!() = Value::Number(-n)
         } else {
-          return Err(format!("cannot make a {} negative", type_value(rcb)))
+          return Err(RuntimeError::TypeError("perform an arithmetic".into(), Type::from(&rcb), None))
         }
       }
 
@@ -314,8 +333,22 @@ impl VM {
               top: b
             };
 
-            let ret = (nf.func)(self)?;
-            *RC_mut!() = ret;
+
+            let ret = (nf.func)(self);
+
+            if let Err(e) = ret {
+              let mut info = CallInfo::new(Closure::new(nf.name.clone(), "Rust".into()), 0); // for trace
+              info.is_builtin = true;
+
+              self.call_stack.push(info);
+
+              return Err(RuntimeError::CustomError(e))
+            } else {
+              *self.pc_mut() += 1;
+              *RC_mut!() = ret.unwrap();
+            }
+
+            return Ok(())
           }
 
           Value::Closure(c) => {
@@ -332,13 +365,13 @@ impl VM {
             self.ncalls += 1;
 
             if self.ncalls >= 20000 {
-              return Err("stack overflow".into())
+              return Err(RuntimeError::StackOverflow)
             }
 
             return Ok(()) // don't skip first instruction of new function
           }
 
-          _ => return Err(format!("cannot call a {} value", type_value(func)))
+          _ => return Err(RuntimeError::TypeError("call".into(), Type::from(&func), None))
         }
       }
 
@@ -374,7 +407,8 @@ impl VM {
 
   fn error(&self, err: String) -> String {
     let call = self.call();
-    format!("{}:{}: {}", call.closure.name, call.closure.lines[call.pc], err)
+
+    format!("{}:{}: {}", call.closure.file_name, call.closure.lines[call.pc], err)
   }
 
   fn bool(&self, val: Value) -> bool {
@@ -385,30 +419,30 @@ impl VM {
     }
   }
 
-  fn index_array(&self, array: Value, pos: Value) -> Result<Value, String> {
+  fn index_array(&self, array: Value, pos: Value) -> Result<Value, RuntimeError> {
     let (array, pos) = self.validate_index(array, pos)?;
     let array = array.borrow();
 
     Ok(array.get(pos).unwrap_or(&Value::Nil).clone())
   }
 
-  fn validate_index(&self, array: Value, idx: Value) -> Result<(Rc<RefCell<Vec<Value>>>, usize), String> {
+  fn validate_index(&self, array: Value, idx: Value) -> Result<(Rc<RefCell<Vec<Value>>>, usize), RuntimeError> {
     if let Value::Array(arr) = array {
       if let Value::Number(pos) = idx {
         if pos.floor() == pos {
           if pos.is_sign_positive() {
             Ok((arr, pos as usize))
           } else {
-            Err("array index must be positive".into())
+            Err(RuntimeError::ArrayIdxNeg)
           }
         } else {
-          Err("array index must be an integer".into())
+          Err(RuntimeError::ArrayIdxFloat)
         }
       } else {
-        Err(format!("attempt to index array with a {}", type_value(idx)))
+        Err(RuntimeError::TypeError("index an array with".into(), Type::from(&idx), None))
       }
     } else {
-      Err(format!("attempt to index a {} value", type_value(array)))
+      Err(RuntimeError::TypeError("index".into(), Type::from(&array), None))
     }
   }
 
