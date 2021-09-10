@@ -1,11 +1,7 @@
-use parser::{ Parser, gen::Compiler };
-use common::Closure;
-use vm::VM;
-
-use std::io::prelude::*;
 use std::process::exit;
-use std::fs::File;
 use std::env;
+
+use common::utils::{ compile_file, do_file };
 
 mod parser;
 mod common;
@@ -17,30 +13,6 @@ enum Exec {
   PrintBytecode(String),
   DoFile(String),
   Exit
-}
-
-fn compile_file(name: String) -> Result<Closure, String> {
-  let mut file = File::open(name.clone()).expect("could not open file");
-  let mut str = String::new();
-
-  file.read_to_string(&mut str).expect("failure to read file");
-
-  if str == "" { return Ok(Closure::new("main".into(), name)) }
-
-  let mut parser = Parser::new(str.into(), name.clone());
-  parser.parse()?;
-
-  let mut compiler = Compiler::new(name.clone());
-  compiler.compile(parser.nodes)?;
-
-  Ok(compiler.closure)
-}
-
-fn do_file(name: String) -> Result<(), String> {
-  let closure = compile_file(name)?;
-
-  let mut vm = VM::new(closure);
-  vm.run()
 }
 
 fn get_name(name: Option<&String>, err: &str) -> Result<String, String> {

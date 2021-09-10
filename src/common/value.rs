@@ -1,10 +1,10 @@
 use std::fmt::{ Debug, Formatter, Result as FmtResult };
 use std::cmp::{ PartialEq, Ordering };
 use std::ops::{ Add, Sub, Div, Mul };
-use std::cell::RefCell;
+use std::hash::{ Hash, Hasher };
 use std::rc::Rc;
 
-use crate::common::Closure;
+use crate::common::{ Closure, Array, Table };
 use crate::vm::VM;
 
 pub type BuiltIn = dyn Fn(&mut VM) -> Result<Value, String>;
@@ -21,29 +21,53 @@ pub enum Value {
   Bool(bool),
   Closure(Closure),
   NativeFunc(Rc<RustFunc>),
-  Array(Rc<RefCell<Vec<Value>>>),
+  Array(Array),
+  Table(Table),
   Nil
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Hash)]
 pub enum Type {
   String,
   Number,
   Bool,
   Function,
   Array,
+  Table,
   Nil
+}
+
+impl Eq for Value {}
+
+impl Eq for Type {}
+
+impl Hash for Value {
+  fn hash<H>(&self, state: &mut H) where H: Hasher {
+    match self {
+      Value::String(s) => s.hash(state),
+      Value::Number(n) => n.to_bits().hash(state), // make sure `n != NaN`
+      Value::Bool(b) => b.hash(state),
+
+      Value::Array(a) => a.hash(state),
+      Value::Table(t) => t.hash(state),
+      Value::Closure(c) => (c as *const Closure).hash(state),
+      Value::NativeFunc(nf) => Rc::as_ptr(nf).hash(state),
+
+      Value::Nil => panic!("cannot hash nil")
+    }
+  }
 }
 
 impl Debug for Value {
   fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
     match self {
-      Value::String(s) => write!(fmt, "{}", s),
+      Value::String(s) => write!(fmt, "{:?}", s),
       Value::Number(n) => write!(fmt, "{}", n),
       Value::Bool(b) => write!(fmt, "{}", b),
       Value::Closure(c) => write!(fmt, "function: {}", c.name),
       Value::NativeFunc(rf) => write!(fmt, "function: {}", rf.name),
-      Value::Array(array) => write!(fmt, "{:?}", array.borrow()),
+      Value::Array(array) => write!(fmt, "{:?}", array),
+      Value::Table(t) => write!(fmt, "{:?}", t),
       Value::Nil => write!(fmt, "nil")
     }
   }
@@ -57,6 +81,7 @@ impl Debug for Type {
       Type::Bool => "bool",
       Type::Function => "function",
       Type::Array => "array",
+      Type::Table => "table",
       Type::Nil => "nil"
     };
 
@@ -72,6 +97,7 @@ impl From<&Value> for Type {
       Value::Number(..) => Type::Number,
       Value::Bool(..) => Type::Bool,
       Value::Array(..) => Type::Array,
+      Value::Table(..) => Type::Table,
       Value::Nil => Type::Nil
     }
   }

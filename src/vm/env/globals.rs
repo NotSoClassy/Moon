@@ -1,70 +1,35 @@
 use std::time::{ SystemTime, UNIX_EPOCH };
 use std::io::Write;
-use std::rc::Rc;
 use std::io;
 
-use crate::common::{ Value, BuiltIn, RustFunc, Type };
-use crate::vm::VM;
+use crate::common::{ Value, Type, utils::compile_file };
+use crate::vm::{ VM, env::{ Env, aux::* } };
 
-fn new_func(vm: &mut VM, name: &str, func: &'static BuiltIn) {
-  let rf = RustFunc {
-    name: name.clone().into(),
-    func
-  };
-
-  let nf = Value::NativeFunc(Rc::new(rf));
-
-  vm.globals.insert(name.into(), nf);
+pub fn load(env: &mut Env) {
+  env.builtin("require", &require);
+  env.builtin("print", &print);
+  env.builtin("write", &write);
+  env.builtin("clock", &clock);
+  env.builtin("error", &error);
+  env.builtin("read", &read);
+  env.builtin("len", &len);
 }
 
-pub fn load(vm: &mut VM) {
-  new_func(vm, "print", &print);
-  new_func(vm, "write", &write);
-  new_func(vm, "clock", &clock);
-  new_func(vm, "error", &error);
-  new_func(vm, "read", &read);
-  new_func(vm, "len", &len);
-}
+fn require(vm: &mut VM) -> Result<Value, String> {
+  let path = expect_string(vm)?;
+  let closure = compile_file(path)?;
 
-fn get(vm: &mut VM, i: usize) -> Result<Value, String> {
-  if i > vm.nci.top {
-    Err("expected value".into())
-  } else {
-    vm.nci.base += 1; // so this never gets read again
-    Ok(vm.regs.get(i as usize).unwrap_or(&Value::Nil).clone())
-  }
-}
+  vm.run_closure(closure)?;
 
-fn expect_string(vm: &mut VM) -> Result<String, String> {
-  let v = get(vm, vm.nci.base)?;
-
-  if let Value::String(s) = v {
-    Ok(s.clone())
-  } else {
-    Err(format!("expected string got {:?}", Type::from(&v)))
-  }
-}
-
-#[inline(always)]
-fn expect_any(vm: &mut VM) -> Result<Value, String> {
-  get(vm, vm.nci.base)
-}
-
-fn get_all(vm: &mut VM) -> Vec<Value> {
-  let mut vals = Vec::new();
-
-  for i in vm.nci.base .. vm.nci.top {
-    vals.push(vm.regs[i as usize].clone());
-  }
-
-  vals
+  Ok(Value::Nil)
 }
 
 fn len(vm: &mut VM) -> Result<Value, String> {
   let val = expect_any(vm)?;
 
   let n = match val.clone() {
-    Value::Array(a) => Some(a.borrow().len()),
+    Value::Array(a) => Some(a.len()),
+    Value::Table(t) => Some(t.len()),
     Value::String(s) => Some(s.len()),
 
     _ => None

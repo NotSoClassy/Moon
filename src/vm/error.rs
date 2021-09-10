@@ -7,6 +7,7 @@ pub enum RuntimeError {
   StackOverflow,
   ArrayIdxBound,
   ArrayIdxFloat,
+  TableIdxNil,
   ArrayIdxNeg
 }
 
@@ -45,21 +46,18 @@ impl RuntimeError {
     trace
   }
 
+  #[inline]
   fn fmt_trace(&self, info: &CallInfo) -> String {
-    if info.is_builtin {
-      format!("\t[{}] in function {}\n", info.closure.file_name, info.closure.name)
-    } else {
-      format!("\t[{}] in function {}\n", info.closure.file_name, info.closure.name)
-    }
+    format!("\t[{}] in function {}\n", info.closure.file_name, info.closure.name)
   }
 
   fn stringify(&self) -> String {
     match self {
       RuntimeError::TypeError(err, t1, t2) => {
         if let Some(t2) = t2 {
-          format!("attempt to {} on a {:?} and {:?} value", err, t1, t2)
+          format!("attempt to {} a {:?} and {:?} value", err, t1, t2)
         } else {
-          format!("attempt to {} on a {:?} value", err, t1)
+          format!("attempt to {} a {:?} value", err, t1)
         }
       },
 
@@ -67,6 +65,7 @@ impl RuntimeError {
       RuntimeError::StackOverflow => "stack overflow".into(),
       RuntimeError::ArrayIdxBound => "array index out of bounds".into(),
       RuntimeError::ArrayIdxFloat => "array index must be an integer".into(),
+      RuntimeError::TableIdxNil => "table index is nil".into(),
       RuntimeError::ArrayIdxNeg => "array index must be positive".into()
     }
   }

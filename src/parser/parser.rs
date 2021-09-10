@@ -102,20 +102,7 @@ impl Parser {
 
     self.expect_next(Token::LeftParen)?;
 
-    let mut params = Vec::new();
-
-    if self.token != Token::RightParen {
-      loop {
-        self.check(Token::Name)?;
-        params.push(self.lex.buf.clone());
-        self.next();
-        if self.token != Token::Comma { break }
-        self.next();
-      }
-    }
-
-    self.check_next(Token::RightParen)?;
-
+    let params = self.name_list(Token::RightParen)?;
     let body = self.block_stmt()?;
 
     Ok(Stmt::Fn(name, params, Box::new(self.to_node(body))))
@@ -191,6 +178,11 @@ impl Parser {
           exp = self.index(exp)?;
         }
 
+        Token::Dot => {
+          self.next();
+          exp = self.dot_index(exp)?;
+        }
+
         Token::LeftParen => {
           self.next();
           exp = self.call(exp)?;
@@ -212,7 +204,9 @@ impl Parser {
       Token::True | Token::False => simple!(Bool, self.token == Token::True),
       Token::String => simple!(String, self.lex.buf.clone()),
       Token::Number => simple!(Number, self.lex.buf.parse().unwrap()), // this shouldn't error
+      Token::Line => { self.next(); self.anon_func() },
       Token::Nil => { self.next(); Ok(Expr::Nil) },
+      Token::LeftBrace => { self.next(); self.table() }
       Token::LeftSquare => { self.next(); self.array() }
 
       _ => self.primary_expr()
@@ -245,15 +239,71 @@ impl Parser {
     Ok(left)
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn expr(&mut self) -> Result<Expr, String> {
     self.sub_expr(0)
   }
 
+  fn anon_func(&mut self) -> Result<Expr, String> {
+    let params = self.name_list(Token::Line)?;
+    let body = self.block()?;
+
+    Ok(Expr::AnonFn(params, Box::new(body)))
+  }
+
   fn index(&mut self, exp: Expr) -> Result<Expr, String> {
     let idx = self.expr()?;
+
     self.check_next(Token::RightSquare)?;
     Ok(Expr::Index(exp.boxed(), idx.boxed()))
+  }
+
+  fn dot_index(&mut self, exp: Expr) -> Result<Expr, String> {
+    let idx = match self.token {
+      Token::Number => {
+        self.expr()
+      }
+
+      Token::Name => {
+        let name = self.lex.buf.clone();
+        self.next();
+        Ok(Expr::String(name))
+      }
+
+      _ => Err(self.error("unexpected token", self.token))
+    }?;
+
+    Ok(Expr::Index(exp.boxed(), idx.boxed()))
+  }
+
+  fn pair(&mut self) -> Result<(Expr, Expr), String> {
+    let key = self.expr()?;
+
+    self.check_next(Token::Colon)?;
+
+    Ok((key, self.expr()?))
+  }
+
+  fn table(&mut self) -> Result<Expr, String> {
+    let mut pairs = Vec::new();
+
+    if self.token != Token::RightBrace {
+      let pair = self.pair()?;
+      pairs.push(pair);
+
+      while self.token == Token::Comma {
+        self.next();
+
+        if self.token == Token::RightBrace { break }
+
+        let pair = self.pair()?;
+        pairs.push(pair);
+      }
+    }
+
+    self.check_next(Token::RightBrace)?;
+
+    Ok(Expr::Table(pairs))
   }
 
   fn array(&mut self) -> Result<Expr, String> {
@@ -266,6 +316,24 @@ impl Parser {
     let args = self.exp_list(Token::RightParen)?;
 
     Ok(Expr::Call(func.boxed(), args))
+  }
+
+  fn name_list(&mut self, end: Token) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+
+    if self.token != end {
+      loop {
+        self.check(Token::Name)?;
+        names.push(self.lex.buf.clone());
+
+        self.next();
+        if self.token != Token::Comma { break }
+        self.next();
+      }
+    }
+
+    self.check_next(end)?;
+    Ok(names)
   }
 
   fn exp_list(&mut self, end: Token) -> Result<Vec<Expr>, String> {

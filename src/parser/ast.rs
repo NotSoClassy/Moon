@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
   pub line: usize,
   pub stmt: Stmt
@@ -25,14 +25,16 @@ pub enum UnOp {
   Not
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Expr {
   String(String),
   Number(f64),
   Name(String),
+  AnonFn(Vec<String>, Box<Node>),
   Index(Box<Expr>, Box<Expr>),
   Bool(bool),
   Array(Vec<Expr>),
+  Table(Vec<(Expr, Expr)>),
   Nil,
 
   Call(Box<Expr>, Vec<Expr>),
@@ -40,7 +42,7 @@ pub enum Expr {
   Unary(UnOp, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
   Let(String, Expr),
   If(Expr, Box<(Node, Option<Node>)>),
@@ -52,7 +54,7 @@ pub enum Stmt {
 }
 
 impl Expr {
-  #[inline(always)]
+  #[inline]
   pub fn boxed(&self) -> Box<Expr> {
     Box::new(self.clone())
   }

@@ -26,14 +26,17 @@ pub enum Opcode {
   /// A Bx | `Global[Bx] = Reg[A]`
   SetGlobal,
 
-  /// A B | `Reg[A] = [ R[A+1] .. B ]`
+  /// A B | `Reg[A] = { R[A]: R[A+1], .. Reg[N]: Reg[B-1] }
+  NewTable,
+
+  /// A B | `Reg[A] = [ Reg[A+1] .. Reg[B] ]`
   NewArray,
 
   /// A B | `Reg[A] = Reg[A][RC(B)]
-  GetArray,
+  GetObj,
 
   /// A B C | `Reg[C][RC(A)] = RC(B)`
-  SetArray,
+  SetObj,
 
   /// A B C | `Reg[C] = RC[A] + RC[B]`
   Add,
@@ -104,8 +107,9 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,
-  Opmode::Abx,
   Opmode::Abc,
+  Opmode::Abc,
+  Opmode::Abx,
   Opmode::Abc,
   Opmode::Abc,
   Opmode::Abc,

@@ -10,7 +10,7 @@ pub struct Lexer {
   pub token: Token
 }
 
-fn get_token(res: Result<Token, String> ) -> Option<Token> {
+fn get_token(res: Result<Token, String>) -> Option<Token> {
   if let Ok(tkn) = res {
     return Some(tkn)
   }
@@ -83,6 +83,10 @@ impl Lexer {
       '*' => next_ret!(Token::Star),
       ';' => next_ret!(Token::Semi),
       ',' => next_ret!(Token::Comma),
+      '|' => next_ret!(Token::Line),
+      '.' => next_ret!(Token::Dot),
+      ':' => next_ret!(Token::Colon),
+
       '/' => {
         self.next();
         if self.current == '/' || self.current == '*' {
@@ -258,22 +262,22 @@ impl Lexer {
     }
   }
 
-  #[inline(always)]
+  #[inline]
   fn is_alpha(&self) -> bool {
     matches!(self.current, 'a' ..= 'z' | 'A' ..= 'Z')
   }
 
-  #[inline(always)]
+  #[inline]
   fn is_num(&self) -> bool {
     matches!(self.current, '0' ..= '9')
   }
 
-  #[inline(always)]
+  #[inline]
   fn is_alnum(&self) -> bool {
     self.is_num() || self.is_alpha()
   }
 
-  #[inline(always)]
+  #[inline]
   fn is_ident(&self) -> bool {
     self.is_alpha() || self.current == '_'
   }
@@ -327,6 +331,9 @@ impl Lexer {
       Token::Ge => "<=",
       Token::Lt => ">",
       Token::Le => ">=",
+      Token::Line => "|",
+      Token::Dot => ".",
+      Token::Colon => ":",
 
       _ => self.buf.as_str()
     };

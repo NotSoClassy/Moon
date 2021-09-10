@@ -15,6 +15,9 @@ pub enum Token {
   RightSquare,
   LeftBrace,
   RightBrace,
+  Colon,
+  Line,
+  Dot,
 
   Equal,
   Eq,

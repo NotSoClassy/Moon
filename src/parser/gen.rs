@@ -31,19 +31,19 @@ pub struct Compiler {
   ni: usize
 }
 
-#[inline(always)]
+#[inline]
 fn get_mode(val: u16) -> u8 {
   (val >> 8 & 0x1).try_into().unwrap()
 }
 
-#[inline(always)]
+#[inline]
 fn set_mode(mode: u8, val: u8) -> u16 {
   let mode = mode & 0x1;
   ((mode as u16) << 8)
       | (val as u16)
 }
 
-#[inline(always)]
+#[inline]
 fn make_abx(op: Opcode, a: u16, bx: u16) -> u32 {
   make_abc(op, a, (bx >> 8) & 0xFF, (bx & 0xFF) as u8)
 }
@@ -76,13 +76,17 @@ impl Compiler {
 
   pub fn compile(&mut self, nodes: Vec<Node>) -> Result<(), String> {
     for node in nodes {
-      let err = self.walk(node);
-      self.error(err)?;
-
-      self.freereg = self.nvars;
+      self.compile_one(node)?;
     }
 
     Ok(())
+  }
+
+  fn compile_one(&mut self, node: Node) -> Result<(), String> {
+    let err = self.walk(node);
+    self.freereg = self.nvars;
+
+    self.error(err)
   }
 
   fn final_ret(&mut self) {
@@ -91,7 +95,7 @@ impl Compiler {
     }
   }
 
-  #[inline(always)]
+  #[inline]
   fn error(&self, err: Result<(), String>) -> Result<(), String> {
     if let Err(e) = err {
       Err(format!("{}:{}: {}", self.name, self.line, e))
@@ -100,7 +104,7 @@ impl Compiler {
     }
   }
 
-  #[inline(always)]
+  #[inline]
   fn walk(&mut self, node: Node) -> Result<(), String> {
     self.stmt(node.stmt)?;
     self.line = node.line;
@@ -143,7 +147,7 @@ impl Compiler {
     compiler.register_var(name)?;
 
     compiler.freereg = compiler.nvars;
-    compiler.compile(vec![body])?;
+    compiler.compile_one(body)?;
     compiler.final_ret();
 
     let closure = Value::Closure(compiler.closure);
@@ -200,12 +204,13 @@ impl Compiler {
     self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
 
     let jmp_pos = self.ni - 1;
+    let top = self.ni;
 
     self.walk(block)?;
-    let to = self.ni - start;
-    self.closure.code[jmp_pos] = self.jmp(false, to - 1)?;
 
-    let jmp = self.jmp(true, to)?;
+    self.closure.code[jmp_pos] = self.jmp(false, self.ni - top + 2)?;
+
+    let jmp = self.jmp(true, self.ni - start)?;
     self.emit(jmp);
 
     Ok(())
@@ -241,7 +246,9 @@ impl Compiler {
       Expr::String(s) => self.load_const(Value::String(s), reg),
       Expr::Number(n) => self.load_const(Value::Number(n), reg),
       Expr::Name(s) => self.load_var(s, reg),
+      Expr::AnonFn(params, body) => self.load_func(params, *body, reg),
       Expr::Array(a) => self.load_array(a, reg),
+      Expr::Table(tbl) => self.load_table(tbl, reg),
       Expr::Index(obj, idx) => self.load_index(*obj, *idx, reg),
 
       Expr::Bool(b) => Ok(self.load_bool(b, reg)),
@@ -251,6 +258,44 @@ impl Compiler {
       Expr::Unary(op, exp) => self.unary(op, *exp, reg),
       Expr::Call(func, args) => self.call(*func, args, reg),
     }
+  }
+
+  fn load_table(&mut self, tbl: Vec<(Expr, Expr)>, reg: u8) -> Result<(), String> {
+    let mut nexp = 0;
+    let reg = reg.into();
+
+    self.freeexp();
+
+    for (key, value) in tbl {
+      self.exp2nextreg(key)?;
+      self.exp2nextreg(value)?;
+
+      nexp += 2;
+    }
+
+    self.freereg -= nexp - 1;
+
+    self.emit(make_abc(Opcode::NewTable, reg, reg + nexp as u16, 0));
+    Ok(())
+  }
+
+  fn load_func(&mut self, params: Vec<String>, body: Node, reg: u8) -> Result<(), String> {
+    let mut compiler = Compiler::new(self.name.clone());
+    compiler.closure.name = format!("{:?}", &compiler as *const Compiler);
+    compiler.closure.nparams = params.len() as u8;
+
+    for param in params {
+      compiler.register_var(param)?;
+    }
+
+    compiler.freereg = compiler.nvars;
+    compiler.compile_one(body)?;
+    compiler.final_ret();
+
+    let closure = Value::Closure(compiler.closure);
+    self.load_const(closure, reg)?;
+
+    Ok(())
   }
 
   fn load_array(&mut self, array: Vec<Expr>, reg: u8) -> Result<(), String> {
@@ -263,7 +308,7 @@ impl Compiler {
       nelem += 1;
     }
 
-    self.freereg -= nelem - 1;
+    self.freereg -= if nelem == 0 { 0 } else { nelem - 1 };
 
     self.emit(make_abc(Opcode::NewArray, reg, reg + nelem as u16, 0));
     Ok(())
@@ -271,10 +316,11 @@ impl Compiler {
 
   fn load_index(&mut self, obj: Expr, idx: Expr, reg: u8) -> Result<(), String> {
     self.expr(obj, reg)?;
+
     let idx = self.rc2nextreg(idx)?;
     let reg = reg.into();
 
-    self.emit(make_abc(Opcode::GetArray, reg, idx, 0));
+    self.emit(make_abc(Opcode::GetObj, reg, idx, 0));
     Ok(())
   }
 
@@ -366,7 +412,7 @@ impl Compiler {
       let a = self.rc2nextreg(*idx)?;
       let b = self.rc2nextreg(value)?;
 
-      self.emit(make_abc(Opcode::SetArray, a, b, reg));
+      self.emit(make_abc(Opcode::SetObj, a, b, reg));
       Ok(())
     } else {
       panic!("This should be impossible!");
@@ -517,7 +563,7 @@ impl Compiler {
     }
   }
 
-  #[inline(always)]
+  #[inline]
   fn emit(&mut self, code: u32) {
     self.ni += 1;
     self.closure.code.push(code);

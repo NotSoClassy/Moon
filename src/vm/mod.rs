@@ -1,13 +1,10 @@
-use std::collections::HashMap;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::common::{ Closure, Value, Opcode, Type };
+use crate::common::{ Closure, Value, Opcode, Type, Array, Table };
+use crate::vm::env::Env;
 use code::*;
 
 pub mod code;
-mod builtin;
-mod error;
+pub mod env;
+pub mod error;
 
 pub use code::pretty_print_closure;
 use error::RuntimeError;
@@ -47,7 +44,7 @@ impl CallInfo {
 
 pub struct VM {
   call_stack: Vec<CallInfo>,
-  globals: HashMap<String, Value>,
+  env: Env,
   nci: NativeCallInfo,
   regs: Vec<Value>,
   ncalls: usize
@@ -57,7 +54,7 @@ impl VM {
   pub fn new(closure: Closure) -> Self {
     VM {
       call_stack: vec![ CallInfo::new(closure, 0) ],
-      globals: HashMap::new(),
+      env: Env::new(),
       nci: NativeCallInfo::new(),
       regs: Vec::with_capacity(20),
       ncalls: 0
@@ -65,20 +62,38 @@ impl VM {
   }
 
   pub fn run(&mut self) -> Result<(), String> {
-    builtin::load(self);
+    self.env.load();
 
     while self.is_end_of_code() {
-      let res = self.exec();
+      self.run_once()?;
+    }
 
-      if let Err(e) = res {
-        let err = e.to_error(&self.call_stack);
+    Ok(())
+  }
 
-        if let Some(v) = self.call_stack.last() {
-          if v.is_builtin { self.call_stack.pop(); }
-        }
+  pub fn run_closure(&mut self, closure: Closure) -> Result<(), String> {
+    let base = self.call_stack.last().unwrap().base;
 
-        return Err(self.error(err))
+    self.call_stack.push(CallInfo::new(closure, base));
+
+    while self.is_end_of_code() {
+      self.run_once()?;
+    }
+
+    Ok(())
+  }
+
+  fn run_once(&mut self) -> Result<(), String> {
+    let res = self.exec();
+
+    if let Err(e) = res {
+      let err = e.to_error(&self.call_stack);
+
+      if let Some(v) = self.call_stack.last() {
+        if v.is_builtin { self.call_stack.pop(); }
       }
+
+      return Err(self.error(err))
     }
 
     Ok(())
@@ -104,7 +119,7 @@ impl VM {
 
     macro_rules! konst {
       ($v:expr) => {
-        call.closure.consts[($v) as usize].clone()
+        &call.closure.consts[($v) as usize]
       };
     }
 
@@ -123,7 +138,7 @@ impl VM {
 
     macro_rules! RA {
       () => {
-        self.regs[A!() as usize].clone()
+        &self.regs[A!() as usize]
       };
     }
 
@@ -135,7 +150,7 @@ impl VM {
 
     macro_rules! RB {
       () => {
-        self.regs[B!() as usize].clone()
+        &self.regs[B!() as usize]
       };
     }
 
@@ -154,7 +169,7 @@ impl VM {
 
     macro_rules! RC {
       () => {
-        self.regs[C!() as usize].clone()
+        &self.regs[C!() as usize]
       };
     }
 
@@ -182,13 +197,13 @@ impl VM {
       ($op:tt) => {{
         let rca = RCA!();
         let rcb = RCB!();
-        let t1 = Type::from(&rca);
-        let t2 = Type::from(&rcb);
+        let t1 = Type::from(rca);
+        let t2 = Type::from(rcb);
 
-        let res = (rca $op rcb);
+        let res = (rca.clone() $op rcb.clone());
 
         if let Err(()) = res {
-          return Err(RuntimeError::TypeError("perform an arithmetic".into(), t1, Some(t2)))
+          return Err(RuntimeError::TypeError("perform an arithmetic on".into(), t1, Some(t2)))
         } else {
           *RC_mut!() = res.unwrap()
         }
@@ -205,13 +220,12 @@ impl VM {
     }
 
     match get_op(i) {
-
       Opcode::Move => {
-        *RA_mut!() = RB!()
+        *RA_mut!() = RB!().clone()
       }
 
       Opcode::LoadConst => {
-        *RA_mut!() = konst!(get_bx(i))
+        *RA_mut!() = konst!(get_bx(i)).clone()
       }
 
       Opcode::LoadBool => {
@@ -224,20 +238,33 @@ impl VM {
 
       Opcode::GetGlobal => {
         let k = konst!(get_bx(i));
-        if let Value::String(str) = k {
-          *RA_mut!() = self.globals.get(&str).unwrap_or(&Value::Nil).clone();
-        } else {
-          return Err(RuntimeError::TypeError("index globals with".into(), Type::from(&k), None))
-        }
+
+        *RA_mut!() = self.env.globals.tbl.borrow().get(&k).unwrap_or(&Value::Nil).clone();
       }
 
       Opcode::SetGlobal => {
-        let k = konst!(get_bx(i));
-        if let Value::String(str) = k {
-          self.globals.insert(str, RA!());
-        } else {
-          return Err(RuntimeError::TypeError("index globals with".into(), Type::from(&k), None))
+        let k = konst!(get_bx(i)).clone();
+        let ra = RA!().clone();
+
+        self.env.set_global(k, ra);
+      }
+
+      Opcode::NewTable => {
+        let (a, b) = (A!(), B!());
+        let tbl = Table::new();
+        let mut i = a;
+
+        while i < b {
+          let key = self.regs[i as usize].clone();
+          let val = self.regs[i + 1 as usize].clone();
+
+          tbl.validate_index(&key)?;
+          tbl.insert(key, val);
+
+          i += 2;
         }
+
+        *RA_mut!() = Value::Table(tbl);
       }
 
       Opcode::NewArray => {
@@ -253,30 +280,44 @@ impl VM {
         *RA_mut!() = self.new_array(array);
       }
 
-      Opcode::GetArray => {
-        let a = get_a(i);
+      Opcode::GetObj => {
+        let a = RA!().clone();
         let b = RCB!();
 
-        *RA_mut!() = self.index_array(self.regs[a as usize].clone(), b)?
+        match a {
+          Value::Array(array) => {
+            let idx = array.validate_index(b)?;
+
+            *RA_mut!() = array.vec.borrow().get(idx).unwrap_or(&Value::Nil).clone()
+          }
+
+          Value::Table(tbl) => {
+            tbl.validate_index(&b)?;
+
+            *RA_mut!() = tbl.tbl.borrow().get(b).unwrap_or(&Value::Nil).clone()
+          }
+
+          _ => return Err(self.index_error(&a))
+        }
       }
 
-      Opcode::SetArray => {
+      Opcode::SetObj => {
         let idx = RCA!();
         let val = RCB!();
-        let val_array = RC!();
+        let obj = RC!();
 
-        let (ref_array, idx) = self.validate_index(val_array, idx)?;
-        let mut array = ref_array.borrow_mut();
-        let len = array.len();
-
-        if idx == len {
-          array.push(val);
-        } else {
-          if let Some(v) = array.get_mut(idx) {
-            *v = val;
-          } else {
-            return Err(RuntimeError::ArrayIdxBound)
+        match obj {
+          Value::Array(array) => {
+            array.insert(&idx, val.clone())?;
           }
+
+          Value::Table(tbl) => {
+            tbl.validate_index(idx)?;
+
+            tbl.insert(idx.clone(), val.clone())
+          }
+
+          _ => return Err(self.index_error(&obj))
         }
       }
 
@@ -296,7 +337,7 @@ impl VM {
         if let Value::Number(n) = rcb {
           *RA_mut!() = Value::Number(-n)
         } else {
-          return Err(RuntimeError::TypeError("perform an arithmetic".into(), Type::from(&rcb), None))
+          return Err(RuntimeError::TypeError("perform an arithmetic on".into(), Type::from(rcb), None))
         }
       }
 
@@ -322,7 +363,7 @@ impl VM {
       }
 
       Opcode::Call => {
-        let func = RA!();
+        let func = RA!().clone();
         let base = A!() + 1;
         let b = B!();
 
@@ -332,7 +373,6 @@ impl VM {
               base,
               top: b
             };
-
 
             let ret = (nf.func)(self);
 
@@ -360,7 +400,7 @@ impl VM {
 
             self.regs.insert(b, Value::Closure(c.clone()));
 
-            let call = CallInfo::new(c, base);
+            let call = CallInfo::new(c.clone(), base);
             self.call_stack.push(call);
             self.ncalls += 1;
 
@@ -379,7 +419,7 @@ impl VM {
         let v = if get_b(i) == 1 {
           Value::Nil
         } else {
-          RCA!()
+          RCA!().clone()
         };
 
         let base = if base == 0 { base } else { base - 1 };
@@ -411,47 +451,25 @@ impl VM {
     format!("{}:{}: {}", call.closure.file_name, call.closure.lines[call.pc], err)
   }
 
-  fn bool(&self, val: Value) -> bool {
+  fn bool(&self, val: &Value) -> bool {
     match val {
-      Value::Bool(b) => b,
+      Value::Bool(b) => *b,
       Value::Nil => false,
       _ => true
     }
   }
 
-  fn index_array(&self, array: Value, pos: Value) -> Result<Value, RuntimeError> {
-    let (array, pos) = self.validate_index(array, pos)?;
-    let array = array.borrow();
-
-    Ok(array.get(pos).unwrap_or(&Value::Nil).clone())
+  #[inline]
+  fn index_error(&self, val: &Value) -> RuntimeError {
+    RuntimeError::TypeError("index".into(), Type::from(val), None)
   }
 
-  fn validate_index(&self, array: Value, idx: Value) -> Result<(Rc<RefCell<Vec<Value>>>, usize), RuntimeError> {
-    if let Value::Array(arr) = array {
-      if let Value::Number(pos) = idx {
-        if pos.floor() == pos {
-          if pos.is_sign_positive() {
-            Ok((arr, pos as usize))
-          } else {
-            Err(RuntimeError::ArrayIdxNeg)
-          }
-        } else {
-          Err(RuntimeError::ArrayIdxFloat)
-        }
-      } else {
-        Err(RuntimeError::TypeError("index an array with".into(), Type::from(&idx), None))
-      }
-    } else {
-      Err(RuntimeError::TypeError("index".into(), Type::from(&array), None))
-    }
-  }
-
-  #[inline(always)]
+  #[inline]
   fn new_array(&self, vals: Vec<Value>) -> Value {
-    Value::Array(Rc::new(RefCell::new(vals)))
+    Value::Array(Array::new(vals))
   }
 
-  #[inline(always)]
+  #[inline]
   fn is_end_of_code(&self) -> bool {
     let call = self.call_stack.last();
     if let Some(call) = call {
@@ -461,17 +479,17 @@ impl VM {
     }
   }
 
-  #[inline(always)]
+  #[inline]
   fn call(&self) -> &CallInfo {
     self.call_stack.last().unwrap()
   }
 
-  #[inline(always)]
+  #[inline]
   fn call_mut(&mut self) -> &mut CallInfo {
     self.call_stack.last_mut().unwrap()
   }
 
-  #[inline(always)]
+  #[inline]
   fn pc_mut(&mut self) -> &mut usize {
     &mut self.call_mut().pc
   }
