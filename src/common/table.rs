@@ -25,12 +25,28 @@ impl Table {
       return Err(RuntimeError::TableIdxNil)
     }
 
+    if let Value::Number(n) = idx {
+      if n.is_nan() {
+        return Err(RuntimeError::TableIdxNaN)
+      }
+    }
+
     Ok(())
   }
 
   #[inline]
-  pub fn insert(&self, idx: Value, val: Value) {
+  pub fn get(&self, idx: &Value) -> Result<Value, RuntimeError> {
+    self.validate_index(idx)?;
+
+    Ok(self.tbl.borrow().get(idx).unwrap_or(&Value::Nil).clone())
+  }
+
+  #[inline]
+  pub fn insert(&self, idx: Value, val: Value) -> Result<(), RuntimeError> {
+    self.validate_index(&idx)?;
+
     self.tbl.borrow_mut().insert(idx, val);
+    Ok(())
   }
 
   #[inline]

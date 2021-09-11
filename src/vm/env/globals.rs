@@ -3,7 +3,8 @@ use std::io::Write;
 use std::io;
 
 use crate::common::{ Value, Type, utils::compile_file };
-use crate::vm::{ VM, env::{ Env, aux::* } };
+use crate::vm::{ VM, env::Env };
+use crate::{ expect, expect_any, get_all };
 
 pub fn load(env: &mut Env) {
   env.builtin("require", &require);
@@ -16,7 +17,7 @@ pub fn load(env: &mut Env) {
 }
 
 fn require(vm: &mut VM) -> Result<Value, String> {
-  let path = expect_string(vm)?;
+  let path = expect!(String, vm)?;
   let closure = compile_file(path)?;
 
   vm.run_closure(closure)?;
@@ -25,7 +26,7 @@ fn require(vm: &mut VM) -> Result<Value, String> {
 }
 
 fn len(vm: &mut VM) -> Result<Value, String> {
-  let val = expect_any(vm)?;
+  let val = expect_any!(vm);
 
   let n = match val.clone() {
     Value::Array(a) => Some(a.len()),
@@ -43,7 +44,7 @@ fn len(vm: &mut VM) -> Result<Value, String> {
 }
 
 fn write(vm: &mut VM) -> Result<Value, String> {
-  let vals = get_all(vm);
+  let vals = get_all!(vm);
   let len = vals.len();
 
   for i in 0 .. len {
@@ -70,7 +71,7 @@ fn clock(_vm: &mut VM) -> Result<Value, String> {
 }
 
 fn error(vm: &mut VM) -> Result<Value, String> {
-  let s = expect_string(vm)?;
+  let s = expect!(String, vm)?;
   Err(s)
 }
 

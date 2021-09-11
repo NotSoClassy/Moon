@@ -56,6 +56,13 @@ impl Array {
   }
 
   #[inline]
+  pub fn get(&self, idx: &Value) -> Result<Value, RuntimeError> {
+    let idx = self.validate_index(idx)?;
+
+    Ok(self.vec.borrow().get(idx).unwrap_or(&Value::Nil).clone())
+  }
+
+  #[inline]
   pub fn len(&self) -> usize {
     self.vec.borrow().len()
   }

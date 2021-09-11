@@ -26,7 +26,7 @@ pub enum Value {
   Nil
 }
 
-#[derive(PartialEq, Hash)]
+#[derive(PartialEq)]
 pub enum Type {
   String,
   Number,
@@ -38,8 +38,6 @@ pub enum Type {
 }
 
 impl Eq for Value {}
-
-impl Eq for Type {}
 
 impl Hash for Value {
   fn hash<H>(&self, state: &mut H) where H: Hasher {
@@ -61,7 +59,7 @@ impl Hash for Value {
 impl Debug for Value {
   fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
     match self {
-      Value::String(s) => write!(fmt, "{:?}", s),
+      Value::String(s) => write!(fmt, "{}", s),
       Value::Number(n) => write!(fmt, "{}", n),
       Value::Bool(b) => write!(fmt, "{}", b),
       Value::Closure(c) => write!(fmt, "function: {}", c.name),

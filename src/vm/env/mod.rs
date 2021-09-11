@@ -17,12 +17,14 @@ impl Env {
   }
 
   pub fn set_global(&mut self, idx: Value, val: Value) {
-    self.globals.insert(idx, val);
+    self.globals.insert(idx, val).unwrap();
   }
 
   pub fn load(&mut self) {
     globals::load(self);
     strlib::load(self);
+
+    self.set_global(Value::String("_G".into()), Value::Table(self.globals.clone()))
   }
 
   #[inline]

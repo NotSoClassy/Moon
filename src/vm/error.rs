@@ -1,3 +1,5 @@
+use std::fmt::{ Debug, Formatter, Result as FmtResult };
+
 use crate::common::Type;
 use crate::vm::CallInfo;
 
@@ -7,6 +9,7 @@ pub enum RuntimeError {
   StackOverflow,
   ArrayIdxBound,
   ArrayIdxFloat,
+  TableIdxNaN,
   TableIdxNil,
   ArrayIdxNeg
 }
@@ -65,8 +68,15 @@ impl RuntimeError {
       RuntimeError::StackOverflow => "stack overflow".into(),
       RuntimeError::ArrayIdxBound => "array index out of bounds".into(),
       RuntimeError::ArrayIdxFloat => "array index must be an integer".into(),
+      RuntimeError::TableIdxNaN => "table index is NaN".into(),
       RuntimeError::TableIdxNil => "table index is nil".into(),
       RuntimeError::ArrayIdxNeg => "array index must be positive".into()
     }
+  }
+}
+
+impl Debug for RuntimeError {
+  fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
+    write!(fmt, "{}", self.stringify())
   }
 }

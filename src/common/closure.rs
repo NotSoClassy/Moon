@@ -14,15 +14,19 @@ pub struct Closure {
 }
 
 impl Closure {
-  pub fn new(name: String, file_name: String) -> Self {
-    Closure {
-      name,
+  pub fn new(file_name: String) -> Self {
+    let mut c = Closure {
+      name: String::new(),
       file_name,
       lines: Vec::new(),
       //upvals: Vec::new(),
       code: Vec::new(),
       consts: Vec::new(),
       nparams: 0
-    }
+    };
+
+    c.name = format!("{:?}", &c as *const Closure);
+
+    c
   }
 }

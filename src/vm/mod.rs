@@ -258,8 +258,7 @@ impl VM {
           let key = self.regs[i as usize].clone();
           let val = self.regs[i + 1 as usize].clone();
 
-          tbl.validate_index(&key)?;
-          tbl.insert(key, val);
+          tbl.insert(key, val)?;
 
           i += 2;
         }
@@ -286,15 +285,11 @@ impl VM {
 
         match a {
           Value::Array(array) => {
-            let idx = array.validate_index(b)?;
-
-            *RA_mut!() = array.vec.borrow().get(idx).unwrap_or(&Value::Nil).clone()
+            *RA_mut!() = array.get(b)?
           }
 
           Value::Table(tbl) => {
-            tbl.validate_index(&b)?;
-
-            *RA_mut!() = tbl.tbl.borrow().get(b).unwrap_or(&Value::Nil).clone()
+            *RA_mut!() = tbl.get(b)?
           }
 
           _ => return Err(self.index_error(&a))
@@ -312,9 +307,7 @@ impl VM {
           }
 
           Value::Table(tbl) => {
-            tbl.validate_index(idx)?;
-
-            tbl.insert(idx.clone(), val.clone())
+            tbl.insert(idx.clone(), val.clone())?;
           }
 
           _ => return Err(self.index_error(&obj))
@@ -377,7 +370,10 @@ impl VM {
             let ret = (nf.func)(self);
 
             if let Err(e) = ret {
-              let mut info = CallInfo::new(Closure::new(nf.name.clone(), "Rust".into()), 0); // for trace
+              let mut c = Closure::new("Rust".into());
+              c.name = nf.name.clone();
+
+              let mut info = CallInfo::new(c, 0); // for trace
               info.is_builtin = true;
 
               self.call_stack.push(info);
@@ -398,9 +394,8 @@ impl VM {
               }
             }
 
-            self.regs.insert(b, Value::Closure(c.clone()));
-
             let call = CallInfo::new(c.clone(), base);
+
             self.call_stack.push(call);
             self.ncalls += 1;
 
@@ -426,6 +421,7 @@ impl VM {
         self.regs[base as usize] = v;
 
         self.call_stack.pop();
+
         if self.is_end_of_code() {
           *self.pc_mut() += 1;
         }

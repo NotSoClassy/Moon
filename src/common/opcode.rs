@@ -87,33 +87,33 @@ impl From<u8> for Opcode {
 }
 
 pub static OPMODES: &[Opmode] = &[
-  Opmode::Abc,
-  Opmode::Abx,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abx,
-  Opmode::Abx,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abx,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc,
-  Opmode::Abc
+  Opmode::Abc, // Move
+  Opmode::Abx, // LoadConst
+  Opmode::Abc, // LoadBool
+  Opmode::Abc, // LoadNil
+  Opmode::Abx, // GetGlobal
+  Opmode::Abx, // SetGlobal
+  Opmode::Abc, // NewTable
+  Opmode::Abc, // NewArray
+  Opmode::Abc, // GetObj
+  Opmode::Abc, // SetObj
+  Opmode::Abc, // Add
+  Opmode::Abc, // Sub
+  Opmode::Abc, // Mul
+  Opmode::Abc, // Div
+  Opmode::Abc, // Eq
+  Opmode::Abc, // Neq
+  Opmode::Abc, // Gt
+  Opmode::Abc, // Ge
+  Opmode::Abc, // Lt
+  Opmode::Abc, // Le
+  Opmode::Abc, // Neg
+  Opmode::Abc, // Not
+  Opmode::Abx, // Jmp
+  Opmode::Abc, // Test
+  Opmode::Abc, // Call
+  Opmode::Abc, // Return
+  Opmode::Abc  // Close
 ];
 
 #[derive(Clone, Copy)]

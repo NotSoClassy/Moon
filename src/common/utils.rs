@@ -11,13 +11,18 @@ pub fn compile_file(name: String) -> Result<Closure, String> {
 
   file.read_to_string(&mut str).expect("failure to read file");
 
-  if str == "" { return Ok(Closure::new("main".into(), name)) }
+  if str == "" {
+    let mut c = Closure::new(name);
+    c.name = "main".into();
+    return Ok(c)
+  }
 
   let mut parser = Parser::new(str.into(), name.clone());
   parser.parse()?;
 
   let mut compiler = Compiler::new(name.clone());
   compiler.compile(parser.nodes)?;
+  compiler.closure.name = "main".into();
 
   Ok(compiler.closure)
 }

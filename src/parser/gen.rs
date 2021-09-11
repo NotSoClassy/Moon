@@ -61,7 +61,7 @@ fn make_abc(op: Opcode, a: u16, b: u16, c: u8) -> u32 {
 
 impl Compiler {
   pub fn new(name: String) -> Self {
-    let closure = Closure::new("main".into(), name.clone());
+    let closure = Closure::new(name.clone());
 
     Compiler {
       nvars: 0,
@@ -132,30 +132,10 @@ impl Compiler {
   }
 
   fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Node) -> Result<(), String> {
-    let start_line = self.line;
-
-    let mut compiler = Compiler::new(self.name.clone());
-    compiler.closure.name = name.clone();
-    compiler.closure.nparams = params.len() as u8;
-
     let var = self.register_var(name.clone())?;
+    let closure = self.func_body(body, params)?;
 
-    for param in params {
-      compiler.register_var(param)?;
-    }
-
-    compiler.register_var(name)?;
-
-    compiler.freereg = compiler.nvars;
-    compiler.compile_one(body)?;
-    compiler.final_ret();
-
-    let closure = Value::Closure(compiler.closure);
-    let old = self.line;
-
-    self.line = start_line;
-    self.load_const(closure, var)?;
-    self.line = old;
+    self.load_const(Value::Closure(closure), var)?;
 
     Ok(())
   }
@@ -234,6 +214,21 @@ impl Compiler {
     Ok(())
   }
 
+  fn func_body(&mut self, body: Node, params: Vec<String>) -> Result<Closure, String> {
+    let mut compiler = Compiler::new(self.name.clone());
+    compiler.closure.nparams = params.len() as u8;
+
+    for param in params {
+      compiler.register_var(param)?;
+    }
+
+    compiler.freereg = compiler.nvars;
+    compiler.walk(body)?;
+    compiler.final_ret();
+
+    Ok(compiler.closure)
+  }
+
   fn exp2nextreg(&mut self, exp: Expr) -> Result<u8, String> {
     self.reserve_regs(1)?;
     let reg = self.freereg - 1;
@@ -273,26 +268,14 @@ impl Compiler {
       nexp += 2;
     }
 
-    self.freereg -= nexp - 1;
+    self.freereg -= if nexp == 0 { 0 } else { nexp - 1 };
 
     self.emit(make_abc(Opcode::NewTable, reg, reg + nexp as u16, 0));
     Ok(())
   }
 
   fn load_func(&mut self, params: Vec<String>, body: Node, reg: u8) -> Result<(), String> {
-    let mut compiler = Compiler::new(self.name.clone());
-    compiler.closure.name = format!("{:?}", &compiler as *const Compiler);
-    compiler.closure.nparams = params.len() as u8;
-
-    for param in params {
-      compiler.register_var(param)?;
-    }
-
-    compiler.freereg = compiler.nvars;
-    compiler.compile_one(body)?;
-    compiler.final_ret();
-
-    let closure = Value::Closure(compiler.closure);
+    let closure = Value::Closure(self.func_body(body, params)?);
     self.load_const(closure, reg)?;
 
     Ok(())
@@ -472,9 +455,7 @@ impl Compiler {
   }
 
   fn load_var(&mut self, name: String, reg: u8) -> Result<(), String> {
-    let locvar = self.get_var(name.clone());
-
-    if let Some(pos) = locvar {
+    if let Some(pos) = self.get_var(name.clone()) {
       self.emit(make_abc(Opcode::Move, reg.into(), pos.into(), 0));
     } else {
       let pos = self.resolve_const(Value::String(name))?;

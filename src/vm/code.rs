@@ -56,15 +56,12 @@ fn get_fn_info(closure: Closure) -> String {
 }
 
 pub fn pretty_print_closure(closure: Closure, recursive: bool) {
-  let mut pc = 0;
-
   println!("{}", get_fn_info(closure.clone()));
 
   for (idx, instruction) in closure.code.iter().enumerate() {
     let s = format_instruction(*instruction);
 
-    println!("\t{}\t[{}]\t{}", idx + 1, closure.lines[pc], s);
-    pc += 1;
+    println!("\t{}\t[{}]\t{}", idx + 1, closure.lines[idx], s);
   }
 
   let mut funcs = Vec::new();
