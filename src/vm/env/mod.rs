@@ -2,6 +2,7 @@ use crate::common::{ Value, BuiltIn, Table };
 use aux::tbl_builtin;
 
 mod globals;
+mod mathlib;
 mod strlib;
 mod aux;
 
@@ -23,6 +24,7 @@ impl Env {
   pub fn load(&mut self) {
     globals::load(self);
     strlib::load(self);
+    mathlib::load(self);
 
     self.set_global(Value::String("_G".into()), Value::Table(self.globals.clone()))
   }

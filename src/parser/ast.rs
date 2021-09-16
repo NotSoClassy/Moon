@@ -27,6 +27,7 @@ pub enum UnOp {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
+  Let(String, Box<Expr>),
   String(String),
   Number(f64),
   Name(String),
@@ -44,8 +45,8 @@ pub enum Expr {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-  Let(String, Expr),
   If(Expr, Box<(Node, Option<Node>)>),
+  For(Expr, Expr, Expr, Box<Node>),
   Fn(String, Vec<String>, Box<Node>),
   Return(Expr),
   While(Expr, Box<Node>),

@@ -71,3 +71,12 @@ macro_rules! optional {
     }}
   };
 }
+
+#[macro_export]
+macro_rules! arg_check {
+  ($cond:expr, $arg:expr, $err:expr) => {
+    if !($cond) {
+      Err(format!("bad argument #{} ({})", $arg, $err))
+    } else { Ok(()) }
+  };
+}

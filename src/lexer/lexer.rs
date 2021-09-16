@@ -293,6 +293,7 @@ impl Lexer {
       "true" => Some(Token::True),
       "false" => Some(Token::False),
       "nil" => Some(Token::Nil),
+      "for" => Some(Token::For),
 
       _ => None
     }

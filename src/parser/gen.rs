@@ -9,14 +9,16 @@ use crate::parser::ast::{
 #[derive(Clone, Debug)]
 pub struct VarInfo {
   pub name: String,
-  pub pos: u8
+  pub pos: u8,
+  pub captured: bool
 }
 
 impl VarInfo {
   pub fn new(name: String, pos: u8) -> Self {
     VarInfo {
       name,
-      pos
+      pos,
+      captured: false
     }
   }
 }
@@ -26,8 +28,10 @@ pub struct Compiler {
   freereg: u8,
   nvars: u8,
   vars: Vec<VarInfo>,
+  upvals: Vec<VarInfo>,
   name: String,
   line: usize,
+  ncap: usize,
   ni: usize
 }
 
@@ -67,9 +71,11 @@ impl Compiler {
       nvars: 0,
       freereg: 0,
       vars: Vec::new(),
+      upvals: Vec::new(),
       closure: closure,
       line: 1,
       name,
+      ncap: 0,
       ni: 0
     }
   }
@@ -115,8 +121,8 @@ impl Compiler {
     match stmt {
       Stmt::Return(val) => self.return_stmt(val),
       Stmt::While(cond, block) => self.while_stmt(cond, *block),
-      Stmt::Block(block) => self.block_stmt(block),
-      Stmt::Let(name, value) => self.let_stmt(name, value),
+      Stmt::Block(block) => self.block_stmt(block, true),
+      Stmt::For(pre, cond, post, body) => self.for_stmt(pre, cond, post, *body),
       Stmt::If(cond, blocks) => self.if_stmt(cond, *blocks),
       Stmt::Fn(name, params, body) => self.fn_stmt(name, params, *body),
 
@@ -124,10 +130,9 @@ impl Compiler {
     }
   }
 
-  fn let_stmt(&mut self, name: String, value: Expr) -> Result<(), String> {
-    self.reserve_regs(1)?;
-    self.expr(value, self.freereg - 1)?;
-    self.register_var(name)?;
+  fn let_expr(&mut self, name: String, value: Expr) -> Result<(), String> {
+    let var = self.register_var(name)?;
+    self.expr(value, var)?;
     Ok(())
   }
 
@@ -144,6 +149,40 @@ impl Compiler {
     let val = self.rc2nextreg(val)?;
 
     self.emit(make_abc(Opcode::Return, val.into(), 0, 0));
+    Ok(())
+  }
+
+  fn for_stmt(&mut self, pre: Expr, cond: Expr, post: Expr, body: Node) -> Result<(), String> {
+    let nvars = self.nvars;
+    self.exp2nextreg(pre)?;
+
+    let start = self.ni;
+    let cond = self.exp2nextreg(cond)?;
+
+    self.emit(make_abc(Opcode::Test, cond.into(), 0, 0));
+    self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
+
+    let jmp_pos = self.ni - 1;
+    let body_start = self.ni;
+
+    self.walk(body)?;
+    self.exp2nextreg(post)?;
+
+    self.fix_jmp(jmp_pos, false, self.ni - body_start + 1)?;
+
+    let jmp = self.jmp(true, self.ni - start)?;
+    self.emit(jmp);
+
+    let close = self.nvars - nvars;
+
+    if close != 0 {
+      for _ in 0 .. close {
+        self.vars.remove(0);
+      }
+
+      // no need to remove them from registers
+    }
+
     Ok(())
   }
 
@@ -196,13 +235,13 @@ impl Compiler {
     Ok(())
   }
 
-  fn block_stmt(&mut self, block: Vec<Node>) -> Result<(), String> {
+  fn block_stmt(&mut self, block: Vec<Node>, should_close: bool) -> Result<(), String> {
     let nvars = self.nvars;
     self.compile(block)?;
 
     let close = self.nvars - nvars;
 
-    if close != 0 {
+    if close != 0 && should_close {
       self.nvars -= close;
       for _ in 0 .. close {
         self.vars.remove(0);
@@ -218,15 +257,33 @@ impl Compiler {
     let mut compiler = Compiler::new(self.name.clone());
     compiler.closure.nparams = params.len() as u8;
 
+    for var in &self.vars {
+      compiler.upvals.push(var.clone());
+    }
+
+    for upval in &self.upvals {
+      let mut upval = upval.clone();
+      upval.captured = false;
+      compiler.upvals.push(upval);
+    }
+
     for param in params {
       compiler.register_var(param)?;
     }
 
     compiler.freereg = compiler.nvars;
-    compiler.walk(body)?;
+    compiler.walk_func_body(body)?;
     compiler.final_ret();
 
     Ok(compiler.closure)
+  }
+
+  fn walk_func_body(&mut self, body: Node) -> Result<(), String> {
+    match body.stmt {
+      Stmt::Block(b) => self.block_stmt(b, false),
+
+      _ => self.walk(body)
+    }
   }
 
   fn exp2nextreg(&mut self, exp: Expr) -> Result<u8, String> {
@@ -238,6 +295,7 @@ impl Compiler {
 
   fn expr(&mut self, exp: Expr, reg: u8) -> Result<(), String> {
     match exp {
+      Expr::Let(name, val) => self.let_expr(name, *val),
       Expr::String(s) => self.load_const(Value::String(s), reg),
       Expr::Number(n) => self.load_const(Value::Number(n), reg),
       Expr::Name(s) => self.load_var(s, reg),
@@ -382,12 +440,16 @@ impl Compiler {
     if let Expr::Name(var) = name {
       self.expr(value, reg)?;
 
-      if let Some(var_reg) = self.get_var(var.clone()) {
-        self.emit(make_abc(Opcode::Move, var_reg.into(), reg.into(), 0));
+      let i = if let Some(var_reg) = self.get_var(var.clone()) {
+        make_abc(Opcode::Move, var_reg.into(), reg.into(), 0)
+      } else if let Some(upval) = self.get_upval(var.clone()) {
+        make_abc(Opcode::SetUpVal, upval.into(), reg.into(), 0)
       } else {
-        let c = self.resolve_const(Value::String(var))?;
-        self.emit(make_abx(Opcode::SetGlobal, reg.into(), c))
-      }
+        let pos = self.resolve_const(Value::String(var))?;
+        make_abx(Opcode::SetGlobal, reg.into(), pos)
+      };
+
+      self.emit(i);
 
       Ok(())
     } else if let Expr::Index(obj, idx) = name {
@@ -455,12 +517,16 @@ impl Compiler {
   }
 
   fn load_var(&mut self, name: String, reg: u8) -> Result<(), String> {
-    if let Some(pos) = self.get_var(name.clone()) {
-      self.emit(make_abc(Opcode::Move, reg.into(), pos.into(), 0));
+    let i = if let Some(pos) = self.get_var(name.clone()) {
+      make_abc(Opcode::Move, reg.into(), pos.into(), 0)
+    } else if let Some(pos) = self.get_upval(name.clone()) {
+      make_abc(Opcode::GetUpVal, reg.into(), pos.into(), 0)
     } else {
       let pos = self.resolve_const(Value::String(name))?;
-      self.emit(make_abx(Opcode::GetGlobal, reg.into(), pos));
-    }
+      make_abx(Opcode::GetGlobal, reg.into(), pos)
+    };
+
+    self.emit(i);
 
     Ok(())
   }
@@ -508,6 +574,28 @@ impl Compiler {
   fn get_var(&mut self, name: String) -> Option<u8> {
     for var in &self.vars {
       if var.name == name {
+        return Some(var.pos)
+      }
+    }
+    None
+  }
+
+  fn get_upval(&mut self, name: String) -> Option<u8> {
+    for var in &mut self.upvals {
+      if var.name == name && var.captured {
+        return Some(var.pos)
+      } else if var.name == name {
+        let pos = self.ncap;
+
+        self.ncap += 1;
+        self.ni += 1;
+
+        self.closure.code.insert(pos, make_abc(Opcode::GetUpVal, pos as u16, var.pos as u16, 0));
+        self.closure.lines.push(self.line);
+
+        var.captured = true;
+        var.pos = pos as u8;
+
         return Some(var.pos)
       }
     }

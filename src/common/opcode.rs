@@ -14,11 +14,11 @@ pub enum Opcode {
   /// A | `Reg[A] = nil`
   LoadNil,
 
-  /*/// A B | `Reg[A] = UpValues[B]`
+  /// A B | `Reg[A] = UpValues[B]`
   GetUpVal,
 
   /// A B | `UpValue[A] = Reg[B]`
-  SetUpVal,*/
+  SetUpVal,
 
   /// A Bx | `Reg[A] = Global[Const[Bx]]`
   GetGlobal,
@@ -91,6 +91,8 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abx, // LoadConst
   Opmode::Abc, // LoadBool
   Opmode::Abc, // LoadNil
+  Opmode::Abc, // GetUpVal
+  Opmode::Abc, // SetUpVal
   Opmode::Abx, // GetGlobal
   Opmode::Abx, // SetGlobal
   Opmode::Abc, // NewTable

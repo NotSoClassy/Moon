@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::common::{ Closure, Value, Opcode, Type, Array, Table };
 use crate::vm::env::Env;
 use code::*;
@@ -108,8 +111,12 @@ impl VM {
       ($pos:expr) => {{
         let pos = $pos;
         let v = self.regs.get_mut(pos);
+
         if v.is_none() {
-          self.regs.insert(pos, Value::Nil);
+          while self.regs.get(pos).is_none() {
+            self.regs.push(Value::Nil);
+          }
+
           self.regs.get_mut(pos).unwrap()
         } else {
           v.unwrap()
@@ -234,6 +241,22 @@ impl VM {
 
       Opcode::LoadNil => {
         *RA_mut!() = Value::Nil
+      }
+
+      Opcode::SetUpVal => {
+        let (_, val) = call.closure.upvals.get(get_a(i) as usize).unwrap();
+
+        *val.borrow_mut() = RB!().clone()
+      }
+
+      Opcode::GetUpVal => {
+        let (_, val) = call.closure.upvals
+          .get(get_b(i) as usize)
+          .unwrap();
+
+        let val = val.borrow().clone();
+
+        *RA_mut!() = val
       }
 
       Opcode::GetGlobal => {
@@ -394,7 +417,18 @@ impl VM {
               }
             }
 
-            let call = CallInfo::new(c.clone(), base);
+            let mut call = CallInfo::new(c.clone(), base);
+
+            for i in &call.closure.code {
+              let i = *i;
+              if get_op(i) == Opcode::GetUpVal {
+                let b = get_b(i);
+                let val = Rc::new(RefCell::new(self.regs[b as usize].clone()));
+
+                call.closure.upvals.insert(get_a(i) as usize, (b, val));
+                call.pc += 1;
+              } else { break }
+            }
 
             self.call_stack.push(call);
             self.ncalls += 1;
@@ -420,7 +454,13 @@ impl VM {
         let base = if base == 0 { base } else { base - 1 };
         self.regs[base as usize] = v;
 
-        self.call_stack.pop();
+
+        let call = self.call_stack.pop().unwrap();
+
+        for (pos, upval) in &call.closure.upvals {
+          let val = upval.borrow().clone();
+          self.regs[*pos as usize] = val;
+        }
 
         if self.is_end_of_code() {
           *self.pc_mut() += 1;

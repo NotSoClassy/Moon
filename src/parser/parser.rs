@@ -57,7 +57,7 @@ impl Parser {
       Token::LeftBrace => stmt!(self.block_stmt()?),
       Token::Return => stmt!(self.return_stmt()?),
       Token::While => stmt!(self.while_stmt()?),
-      Token::Let => stmt!(self.let_stmt()?),
+      Token::For => stmt!(self.for_stmt()?),
       Token::If => stmt!(self.if_stmt()?),
       Token::Fn => stmt!(self.fn_stmt()?),
 
@@ -65,16 +65,38 @@ impl Parser {
     }
   }
 
-  fn let_stmt(&mut self) -> Result<Stmt, String> {
-    self.expect(Token::Name)?;
+  fn let_expr(&mut self) -> Result<Expr, String> {
+    self.check(Token::Name)?;
 
     let name = self.lex.buf.clone();
 
-    self.expect(Token::Equal)?;
-    self.next();
+    let value = if self.test_next(Token::Equal) {
+      self.expr()?
+    } else {
+      Expr::Nil
+    };
 
-    let value = self.expr()?;
-    Ok(Stmt::Let(name, value))
+    Ok(Expr::Let(name, value.boxed()))
+  }
+
+  fn for_stmt(&mut self) -> Result<Stmt, String> {
+    self.expect_next(Token::LeftParen)?;
+
+    let pre = self.expr()?;
+
+    self.check_next(Token::Semi)?;
+
+    let cond = self.expr()?;
+
+    self.check_next(Token::Semi)?;
+
+    let post = self.expr()?;
+
+    self.check_next(Token::RightParen)?;
+
+    let block = self.block()?;
+
+    Ok(Stmt::For(pre, cond, post, Box::new(block)))
   }
 
   fn if_stmt(&mut self) -> Result<Stmt, String> {
@@ -208,6 +230,7 @@ impl Parser {
       Token::Nil => { self.next(); Ok(Expr::Nil) },
       Token::LeftBrace => { self.next(); self.table() }
       Token::LeftSquare => { self.next(); self.array() }
+      Token::Let => { self.next(); self.let_expr() }
 
       _ => self.primary_expr()
     }

@@ -28,13 +28,12 @@ fn str_sub(vm: &mut VM) -> Result<Value, String> {
   let str = expect!(String, vm)?;
   let len = str.len();
 
-  let start = expect!(Number, vm)? as usize;
-  let end = optional!(Number, len as f64, vm) as usize;
+  let mut start = expect!(Number, vm)? as usize;
+  let mut end = optional!(Number, len as f64, vm) as usize;
 
-  let start = start.clamp(0, len);
-  let end = end.clamp(0, len);
-
-  let start = start.clamp(0, end);
+  start = start.clamp(0, len);
+  end = end.clamp(0, len);
+  start = start.clamp(0, end);
 
   Ok(Value::String(str[start..end].to_string()))
 }
