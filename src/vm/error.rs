@@ -54,7 +54,7 @@ impl RuntimeError {
     format!("\t[{}] in function {}\n", info.closure.file_name, info.closure.name)
   }
 
-  fn stringify(&self) -> String {
+  pub fn stringify(&self) -> String {
     match self {
       RuntimeError::TypeError(err, t1, t2) => {
         if let Some(t2) = t2 {
@@ -72,6 +72,18 @@ impl RuntimeError {
       RuntimeError::TableIdxNil => "table index is nil".into(),
       RuntimeError::ArrayIdxNeg => "array index must be positive".into()
     }
+  }
+}
+
+impl From<String> for RuntimeError {
+  fn from(str: String) -> Self {
+    RuntimeError::CustomError(str)
+  }
+}
+
+impl From<&str> for RuntimeError {
+  fn from(str: &str) -> Self {
+    RuntimeError::CustomError(str.into())
   }
 }
 

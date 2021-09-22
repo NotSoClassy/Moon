@@ -31,6 +31,7 @@ pub enum Token {
   Dash,
   Star,
   Slash,
+  Percent,
   Bang,
   Semi,
   Comma,

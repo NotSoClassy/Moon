@@ -46,6 +46,10 @@ pub enum Opcode {
   Mul,
   /// A B C | `Reg[C] = RC[A] / RC[B]`
   Div,
+  /// A B C | `Reg[C] = RC[A] % RC[B]`
+  Mod,
+
+
   /// A B C | `Reg[C] = RC[A] == RC[B]`
   Eq,
   /// A B C | `Reg[C] = RC[A] != RC[B]`
@@ -103,6 +107,7 @@ pub static OPMODES: &[Opmode] = &[
   Opmode::Abc, // Sub
   Opmode::Abc, // Mul
   Opmode::Abc, // Div
+  Opmode::Abc, // Mod
   Opmode::Abc, // Eq
   Opmode::Abc, // Neq
   Opmode::Abc, // Gt

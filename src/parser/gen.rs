@@ -119,10 +119,11 @@ impl Compiler {
 
   fn stmt(&mut self, stmt: Stmt) -> Result<(), String> {
     match stmt {
+      Stmt::Let(name, val) => self.let_stmt(name, val),
       Stmt::Return(val) => self.return_stmt(val),
       Stmt::While(cond, block) => self.while_stmt(cond, *block),
       Stmt::Block(block) => self.block_stmt(block, true),
-      Stmt::For(pre, cond, post, body) => self.for_stmt(pre, cond, post, *body),
+      Stmt::For(pre, cond, post, body) => self.for_stmt(*pre, cond, post, *body),
       Stmt::If(cond, blocks) => self.if_stmt(cond, *blocks),
       Stmt::Fn(name, params, body) => self.fn_stmt(name, params, *body),
 
@@ -130,11 +131,12 @@ impl Compiler {
     }
   }
 
-  fn let_expr(&mut self, name: String, value: Expr) -> Result<(), String> {
+  fn let_stmt(&mut self, name: String, value: Expr) -> Result<(), String> {
     let var = self.register_var(name)?;
     self.expr(value, var)?;
     Ok(())
   }
+
 
   fn fn_stmt(&mut self, name: String, params: Vec<String>, body: Node) -> Result<(), String> {
     let var = self.register_var(name.clone())?;
@@ -152,9 +154,9 @@ impl Compiler {
     Ok(())
   }
 
-  fn for_stmt(&mut self, pre: Expr, cond: Expr, post: Expr, body: Node) -> Result<(), String> {
+  fn for_stmt(&mut self, pre: Node, cond: Expr, post: Expr, body: Node) -> Result<(), String> {
     let nvars = self.nvars;
-    self.exp2nextreg(pre)?;
+    self.walk(pre)?;
 
     let start = self.ni;
     let cond = self.exp2nextreg(cond)?;
@@ -295,7 +297,6 @@ impl Compiler {
 
   fn expr(&mut self, exp: Expr, reg: u8) -> Result<(), String> {
     match exp {
-      Expr::Let(name, val) => self.let_expr(name, *val),
       Expr::String(s) => self.load_const(Value::String(s), reg),
       Expr::Number(n) => self.load_const(Value::Number(n), reg),
       Expr::Name(s) => self.load_var(s, reg),
@@ -369,9 +370,15 @@ impl Compiler {
     self.expr(func, reg)?;
 
     let mut narg = 0;
+    let mut freg = self.freereg;
+    self.reserve_regs(1)?;
+
     for arg in args {
       narg += 1;
-      self.exp2nextreg(arg)?;
+      freg += 1;
+
+      self.expr(arg, freg - 1)?;
+      self.reserve_regs(1)?;
     }
 
     let func_reg = reg as u16;
@@ -406,6 +413,7 @@ impl Compiler {
       BinOp::Sub => arith!(Sub),
       BinOp::Mul => arith!(Mul),
       BinOp::Div => arith!(Div),
+      BinOp::Mod => arith!(Mod),
 
       BinOp::Neq => cmp!(Neq),
       BinOp::Eq => cmp!(Eq),
@@ -626,6 +634,7 @@ impl Compiler {
       let pos = self.nvars;
 
       self.nvars += 1;
+      self.freereg = self.nvars;
       self.vars.insert(0, VarInfo::new(name, pos));
 
       Ok(pos)

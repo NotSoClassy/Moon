@@ -41,13 +41,18 @@ impl Parser {
     }
   }
 
+  #[inline]
   fn stmt(&mut self) -> Result<Stmt, String> {
+    self._stmt(true)
+  }
+
+  fn _stmt(&mut self, consume_semi: bool) -> Result<Stmt, String> {
     macro_rules! stmt {
       ($i:expr) => {
         {
           self.line = self.lex.line;
           let res = $i;
-          self.test_next(Token::Semi);
+          if consume_semi { self.test_next(Token::Semi); }
           return Ok(res)
         }
       };
@@ -58,6 +63,7 @@ impl Parser {
       Token::Return => stmt!(self.return_stmt()?),
       Token::While => stmt!(self.while_stmt()?),
       Token::For => stmt!(self.for_stmt()?),
+      Token::Let => stmt!(self.let_stmt()?),
       Token::If => stmt!(self.if_stmt()?),
       Token::Fn => stmt!(self.fn_stmt()?),
 
@@ -65,24 +71,31 @@ impl Parser {
     }
   }
 
-  fn let_expr(&mut self) -> Result<Expr, String> {
-    self.check(Token::Name)?;
+  fn let_stmt(&mut self) -> Result<Stmt, String> {
+    self.expect(Token::Name)?;
 
     let name = self.lex.buf.clone();
 
+    self.next();
     let value = if self.test_next(Token::Equal) {
       self.expr()?
     } else {
       Expr::Nil
     };
 
-    Ok(Expr::Let(name, value.boxed()))
+    Ok(Stmt::Let(name, value))
   }
 
   fn for_stmt(&mut self) -> Result<Stmt, String> {
     self.expect_next(Token::LeftParen)?;
 
-    let pre = self.expr()?;
+    let tkn = self.token2str(self.token);
+    let pre = self._stmt(false)?;
+
+    match pre {
+      Stmt::Let(..) | Stmt::Expr(..) => {}
+      _ => return Err(self.lex.error(format!("unexpected statement near '{}'", tkn).as_str()))
+    }
 
     self.check_next(Token::Semi)?;
 
@@ -96,7 +109,7 @@ impl Parser {
 
     let block = self.block()?;
 
-    Ok(Stmt::For(pre, cond, post, Box::new(block)))
+    Ok(Stmt::For(Box::new(self.to_node(pre)), cond, post, Box::new(block)))
   }
 
   fn if_stmt(&mut self) -> Result<Stmt, String> {
@@ -230,7 +243,6 @@ impl Parser {
       Token::Nil => { self.next(); Ok(Expr::Nil) },
       Token::LeftBrace => { self.next(); self.table() }
       Token::LeftSquare => { self.next(); self.array() }
-      Token::Let => { self.next(); self.let_expr() }
 
       _ => self.primary_expr()
     }
@@ -300,7 +312,21 @@ impl Parser {
   }
 
   fn pair(&mut self) -> Result<(Expr, Expr), String> {
-    let key = self.expr()?;
+    let key = if self.test(Token::Name) {
+      let name = self.lex.buf.clone();
+
+      self.next();
+
+      Expr::String(name)
+    } else {
+      self.check_next(Token::LeftSquare)?;
+
+      let exp = self.expr()?;
+
+      self.check_next(Token::RightSquare)?;
+
+      exp
+    };
 
     self.check_next(Token::Colon)?;
 
@@ -397,6 +423,7 @@ impl Parser {
       Token::Dash => Some(BinOp::Sub),
       Token::Star => Some(BinOp::Mul),
       Token::Slash => Some(BinOp::Div),
+      Token::Percent => Some(BinOp::Mod),
       Token::Equal => Some(BinOp::Assign),
 
       _ => None
@@ -420,9 +447,9 @@ impl Parser {
     Ok(())
   }
 
-  /*fn test(&mut self, token: Token) -> bool {
+  fn test(&mut self, token: Token) -> bool {
     return self.token == token
-  }*/
+  }
 
   fn test_next(&mut self, token: Token) -> bool {
     if self.token == token {
@@ -476,6 +503,6 @@ impl Parser {
   }
 
   fn error(&self, err: &str, token: Token) -> String {
-    self.lex.error(err, token)
+    self.lex.error_near(err, token)
   }
 }

@@ -1,13 +1,13 @@
 use std::fmt::{ Debug, Formatter, Result as FmtResult };
+use std::ops::{ Add, Sub, Div, Mul, Rem };
 use std::cmp::{ PartialEq, Ordering };
-use std::ops::{ Add, Sub, Div, Mul };
 use std::hash::{ Hash, Hasher };
 use std::rc::Rc;
 
 use crate::common::{ Closure, Array, Table };
-use crate::vm::VM;
+use crate::vm::{ VM, RuntimeError };
 
-pub type BuiltIn = dyn Fn(&mut VM) -> Result<Value, String>;
+pub type BuiltIn = dyn Fn(&mut VM) -> Result<Value, RuntimeError>;
 
 pub struct RustFunc {
   pub name: String,
@@ -64,15 +64,15 @@ impl Debug for Value {
       Value::Bool(b) => write!(fmt, "{}", b),
       Value::Closure(c) => write!(fmt, "function: {}", c.name),
       Value::NativeFunc(rf) => write!(fmt, "function: {}", rf.name),
-      Value::Array(array) => write!(fmt, "{:?}", array),
-      Value::Table(t) => write!(fmt, "{:?}", t),
+      Value::Array(array) => write!(fmt, "{:?}", array.vec.borrow()),
+      Value::Table(t) => write!(fmt, "{:?}", t.tbl.borrow()),
       Value::Nil => write!(fmt, "nil")
     }
   }
 }
 
-impl Debug for Type {
-  fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
+impl Type {
+  pub fn to_string(&self) -> String {
     let str = match self {
       Type::String => "string",
       Type::Number => "number",
@@ -83,7 +83,13 @@ impl Debug for Type {
       Type::Nil => "nil"
     };
 
-    write!(fmt, "{}", str)
+    str.into()
+  }
+}
+
+impl Debug for Type {
+  fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
+    write!(fmt, "{}", self.to_string())
   }
 }
 
@@ -142,6 +148,18 @@ impl Div for Value {
   fn div(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs / rhs)),
+
+      _ => Err(())
+    }
+  }
+
+  type Output = Result<Value, ()>;
+}
+
+impl Rem for Value {
+  fn rem(self, rhs: Value) -> Result<Value, ()> {
+    match (self.clone(), rhs.clone()) {
+      (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs % rhs)),
 
       _ => Err(())
     }

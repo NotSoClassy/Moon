@@ -7,7 +7,7 @@ pub struct Closure {
   pub name: String,
   pub file_name: String,
   pub lines: Vec<usize>,
-  pub upvals: Vec<(u8, Rc<RefCell<Value>>)>,
+  pub upvals: Rc<RefCell<Vec<(u8, Value)>>>,
   pub code: Vec<u32>,
   pub consts: Vec<Value>,
   pub nparams: u8
@@ -19,7 +19,7 @@ impl Closure {
       name: String::new(),
       file_name,
       lines: Vec::new(),
-      upvals: Vec::new(),
+      upvals: Rc::new(RefCell::new(Vec::new())),
       code: Vec::new(),
       consts: Vec::new(),
       nparams: 0

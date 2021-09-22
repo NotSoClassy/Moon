@@ -86,6 +86,7 @@ impl Lexer {
       '|' => next_ret!(Token::Line),
       '.' => next_ret!(Token::Dot),
       ':' => next_ret!(Token::Colon),
+      '%' => next_ret!(Token::Percent),
 
       '/' => {
         self.next();
@@ -130,7 +131,7 @@ impl Lexer {
         } else if self.is_num() {
           resolve(self.read_number(), Token::Number)
         } else {
-          Err(self.error("unexpected token", Token::SC(self.current)))
+          Err(self.error_near("unexpected token", Token::SC(self.current)))
         }
       }
     }
@@ -141,7 +142,7 @@ impl Lexer {
       '*' => {
         self.next();
         loop {
-          if self.current == '\0' { return Err(self.error("unfinished comment", Token::Eof)) }
+          if self.current == '\0' { return Err(self.error_near("unfinished comment", Token::Eof)) }
           if self.current == '*' {
             self.next();
             if self.current == '/' {
@@ -181,12 +182,10 @@ impl Lexer {
 
     while self.current != quote {
       match self.current {
-        '\0' => {
-          return Err(self.error("unfinished string", Token::Eof))
-        }
+        c @ ('\0' | '\n') => {
+          let tkn = if c == '\0' { Token::Eof } else { Token::String };
 
-        '\n' => {
-          return Err(self.error("unfinished string", Token::String))
+          return Err(self.error_near("unfinished string", tkn))
         }
 
         '\\' => {
@@ -207,7 +206,7 @@ impl Lexer {
             '\0' => continue,
 
             _ => {
-              return Err(self.error("invalid escape", Token::String))
+              return Err(self.error_near("invalid escape", Token::String))
             }
           };
 
@@ -246,7 +245,7 @@ impl Lexer {
     }
 
     if self.is_alnum() {
-      Err(self.error("malformed number", self.token))
+      Err(self.error_near("malformed number", self.token))
     } else {
       Ok(())
     }
@@ -299,8 +298,12 @@ impl Lexer {
     }
   }
 
-  pub fn error(&self, err: &str, token: Token) -> String {
-    format!("{}:{}: {} near '{}'", self.name, self.line, err, self.token2str(token))
+  pub fn error(&self, err: &str) -> String {
+    format!("{}:{}: {}", self.name, self.line, err)
+  }
+
+  pub fn error_near(&self, err: &str, token: Token) -> String {
+    format!("{} near '{}'", self.error(err), self.token2str(token))
   }
 
   pub fn token2str(&self, token: Token) -> String {

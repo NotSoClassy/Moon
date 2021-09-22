@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::common::{ Closure, Value, Opcode, Type, Array, Table };
 use crate::vm::env::Env;
 use code::*;
@@ -10,7 +7,7 @@ pub mod env;
 pub mod error;
 
 pub use code::pretty_print_closure;
-use error::RuntimeError;
+pub use error::RuntimeError;
 
 pub struct NativeCallInfo {
   base: usize,
@@ -46,8 +43,8 @@ impl CallInfo {
 }
 
 pub struct VM {
+  pub env: Env,
   call_stack: Vec<CallInfo>,
-  env: Env,
   nci: NativeCallInfo,
   regs: Vec<Value>,
   ncalls: usize
@@ -114,7 +111,7 @@ impl VM {
 
         if v.is_none() {
           while self.regs.get(pos).is_none() {
-            self.regs.push(Value::Nil);
+            self.regs.push(Value::Nil)
           }
 
           self.regs.get_mut(pos).unwrap()
@@ -244,19 +241,24 @@ impl VM {
       }
 
       Opcode::SetUpVal => {
-        let (_, val) = call.closure.upvals.get(get_a(i) as usize).unwrap();
+        let mut upvals = call.closure.upvals.borrow_mut();
+        let (_, upval) = upvals.get_mut(get_a(i) as usize).unwrap();
+        let val = RB!().clone();
 
-        *val.borrow_mut() = RB!().clone()
+        *upval = val
       }
 
       Opcode::GetUpVal => {
-        let (_, val) = call.closure.upvals
-          .get(get_b(i) as usize)
-          .unwrap();
+        let val = {
+          let upvals = call.closure.upvals.borrow();
+          let (_, upval) = upvals
+            .get(get_b(i) as usize)
+            .unwrap();
 
-        let val = val.borrow().clone();
+          upval.clone()
+        };
 
-        *RA_mut!() = val
+        *RA_mut!() = val;
       }
 
       Opcode::GetGlobal => {
@@ -341,6 +343,8 @@ impl VM {
       Opcode::Sub => arith!(-),
       Opcode::Mul => arith!(*),
       Opcode::Div => arith!(/),
+      Opcode::Mod => arith!(%),
+
       Opcode::Neq => cmp!(!=),
       Opcode::Eq => cmp!(==),
       Opcode::Lt => cmp!(>),
@@ -393,7 +397,7 @@ impl VM {
             let ret = (nf.func)(self);
 
             if let Err(e) = ret {
-              let mut c = Closure::new("Rust".into());
+              let mut c = Closure::new("rust".into());
               c.name = nf.name.clone();
 
               let mut info = CallInfo::new(c, 0); // for trace
@@ -401,7 +405,7 @@ impl VM {
 
               self.call_stack.push(info);
 
-              return Err(RuntimeError::CustomError(e))
+              return Err(e)
             } else {
               *self.pc_mut() += 1;
               *RC_mut!() = ret.unwrap();
@@ -423,9 +427,9 @@ impl VM {
               let i = *i;
               if get_op(i) == Opcode::GetUpVal {
                 let b = get_b(i);
-                let val = Rc::new(RefCell::new(self.regs[b as usize].clone()));
+                let val = self.regs[b as usize].clone();
 
-                call.closure.upvals.insert(get_a(i) as usize, (b, val));
+                call.closure.upvals.borrow_mut().insert(get_a(i) as usize, (b, val));
                 call.pc += 1;
               } else { break }
             }
@@ -454,11 +458,10 @@ impl VM {
         let base = if base == 0 { base } else { base - 1 };
         self.regs[base as usize] = v;
 
-
         let call = self.call_stack.pop().unwrap();
 
-        for (pos, upval) in &call.closure.upvals {
-          let val = upval.borrow().clone();
+        for (pos, upval) in &*call.closure.upvals.borrow() {
+          let val = upval.clone();
           self.regs[*pos as usize] = val;
         }
 

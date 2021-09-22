@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::common::{ Value, Table, BuiltIn, RustFunc };
-use crate::vm::VM;
+use crate::vm::{ VM, RuntimeError };
 
 pub fn tbl_builtin(tbl: &Table, name: &str, func: &'static BuiltIn) {
   let rf = RustFunc {
@@ -12,13 +12,24 @@ pub fn tbl_builtin(tbl: &Table, name: &str, func: &'static BuiltIn) {
   tbl.insert(Value::String(name.into()), Value::NativeFunc(Rc::new(rf))).unwrap();
 }
 
-pub fn get(vm: &mut VM) -> Result<Value, String> {
+pub fn get(vm: &mut VM) -> Result<Value, RuntimeError> {
+  vm.nci.base += 1; // so this never gets read again
+
   if vm.nci.base > vm.nci.top {
-    Err("expected value".into())
+    Err(RuntimeError::CustomError("expected value".into()))
   } else {
-    let pos = vm.nci.base;
-    vm.nci.base += 1; // so this never gets read again
+    let pos = vm.nci.base - 1;
     Ok(vm.regs.get(pos as usize).unwrap_or(&Value::Nil).clone())
+  }
+}
+
+pub fn try_get(vm: &mut VM) -> Option<Value> {
+  let res = get(vm);
+
+  if let Ok(v) = res {
+    Some(v)
+  } else {
+    None
   }
 }
 

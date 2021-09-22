@@ -30,7 +30,7 @@ impl Env {
   }
 
   #[inline]
-  pub(super) fn builtin(&mut self, name: &str, func: &'static BuiltIn) {
+  pub fn builtin(&mut self, name: &str, func: &'static BuiltIn) {
     tbl_builtin(&self.globals, name, func)
   }
 }

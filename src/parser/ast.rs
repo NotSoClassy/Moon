@@ -16,7 +16,8 @@ pub enum BinOp {
   Add,
   Sub,
   Mul,
-  Div
+  Div,
+  Mod
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -27,7 +28,6 @@ pub enum UnOp {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-  Let(String, Box<Expr>),
   String(String),
   Number(f64),
   Name(String),
@@ -45,8 +45,10 @@ pub enum Expr {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
+  Let(String, Expr),
   If(Expr, Box<(Node, Option<Node>)>),
-  For(Expr, Expr, Expr, Box<Node>),
+  /// First statement should be Stmt::Let or Stmt::Expr
+  For(Box<Node>, Expr, Expr, Box<Node>),
   Fn(String, Vec<String>, Box<Node>),
   Return(Expr),
   While(Expr, Box<Node>),
@@ -64,7 +66,7 @@ impl Expr {
 impl BinOp {
   pub fn priority(&self) -> u8 {
     match self {
-      BinOp::Mul | BinOp::Div => 5,
+      BinOp::Mul | BinOp::Div | BinOp::Mod => 5,
       BinOp::Add | BinOp::Sub => 4,
       BinOp::Gt | BinOp::Ge |
         BinOp::Lt | BinOp::Le => 3,
