@@ -83,10 +83,29 @@ impl Lexer {
       '*' => next_ret!(Token::Star),
       ';' => next_ret!(Token::Semi),
       ',' => next_ret!(Token::Comma),
-      '|' => next_ret!(Token::Line),
       '.' => next_ret!(Token::Dot),
       ':' => next_ret!(Token::Colon),
       '%' => next_ret!(Token::Percent),
+
+      '&' => {
+        self.next();
+        if self.current == '&' {
+          self.next();
+          Ok(Token::And)
+        } else {
+          Err(self.error_near("unexpected token", Token::SC('&')))
+        }
+      }
+
+      '|' => {
+        self.next();
+        if self.current == '|' {
+          self.next();
+          Ok(Token::Or)
+        } else {
+          Ok(Token::Line)
+        }
+      }
 
       '/' => {
         self.next();
@@ -170,7 +189,7 @@ impl Lexer {
     self.buf.push(self.current);
     self.next();
 
-    while self.is_ident() {
+    while self.is_ident() || self.is_num() {
       self.buf.push(self.current);
       self.next();
     }

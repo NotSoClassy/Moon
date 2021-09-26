@@ -57,8 +57,10 @@ pub fn load(env: &mut Env) {
   tbl_builtin(&tbl, "randomseed", &math_randomseed);
   tbl_builtin(&tbl, "random", &math_random);
   tbl_builtin(&tbl, "floor", &math_floor);
+  tbl_builtin(&tbl, "log10", &math_log10);
   tbl_builtin(&tbl, "sqrt", &math_sqrt);
   tbl_builtin(&tbl, "ceil", &math_ceil);
+  tbl_builtin(&tbl, "log", &math_log);
   tbl_builtin(&tbl, "pow", &math_pow);
   tbl_builtin(&tbl, "max", &math_max);
   tbl_builtin(&tbl, "min", &math_min);
@@ -84,6 +86,14 @@ fn math_abs(vm: &mut VM) -> Result<Value, RuntimeError> {
 
 fn math_ceil(vm: &mut VM) -> Result<Value, RuntimeError> {
   method!(ceil, vm)
+}
+
+fn math_log10(vm: &mut VM) -> Result<Value, RuntimeError> {
+  method!(log10, vm)
+}
+
+fn math_log(vm: &mut VM) -> Result<Value, RuntimeError> {
+  method2!(log, vm)
 }
 
 fn math_pow(vm: &mut VM) -> Result<Value, RuntimeError> {

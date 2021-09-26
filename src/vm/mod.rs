@@ -376,7 +376,7 @@ impl VM {
       }
 
       Opcode::Test => {
-        if self.bool(RA!()) {
+        if self.bool(RA!()) == (get_b(i) == 0) {
           *self.pc_mut() += 2;
           return Ok(())
         }
@@ -425,7 +425,7 @@ impl VM {
 
             for i in &call.closure.code {
               let i = *i;
-              if get_op(i) == Opcode::GetUpVal {
+              if get_op(i) == Opcode::GetUpVal && get_c(i) == 1 {
                 let b = get_b(i);
                 let val = self.regs[b as usize].clone();
 

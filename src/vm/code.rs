@@ -30,17 +30,17 @@ pub fn get_bx(i: u32) -> u16 {
 }
 
 pub fn format_instruction(i: u32) -> String {
-  let mode = OPMODES[get_op(i) as usize];
+  let (name, mode) = OPMODES[get_op(i) as usize];
   let am = if get_a_mode(i) == 1 { "-" } else { "" };
 
   match mode {
     Opmode::Abc => {
       let bm = if get_b_mode(i) == 1 { "-" } else { "" };
-      format!("{:?} {}{} {}{} {}", get_op(i), am, get_a(i), bm, get_b(i), get_c(i))
+      format!("{} {}{} {}{} {}", name, am, get_a(i), bm, get_b(i), get_c(i))
     }
 
     Opmode::Abx => {
-      format!("{:?} {}{} {}", get_op(i), am, get_a(i), get_bx(i))
+      format!("{} {}{} {}", name, am, get_a(i), get_bx(i))
     }
   }
 }

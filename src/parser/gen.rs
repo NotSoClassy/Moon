@@ -388,6 +388,7 @@ impl Compiler {
 
   fn binary(&mut self, lhs: Expr, op: BinOp, rhs: Expr, reg: u8) -> Result<(), String> {
     if op == BinOp::Assign { return self.assignment(lhs, rhs, reg) }
+    if op == BinOp::And || op == BinOp::Or { return self.logical(lhs, rhs, reg, op == BinOp::Or) }
 
     let lhv = self.rc2reg(lhs, reg)?;
     let rhv = if get_mode(lhv) == 1 {
@@ -422,7 +423,7 @@ impl Compiler {
       BinOp::Le => cmp!(Le),
       BinOp::Ge => cmp!(Ge),
 
-      BinOp::Assign => {}
+      BinOp::Assign | BinOp::Or | BinOp::And => {}
     }
 
     Ok(())
@@ -440,6 +441,23 @@ impl Compiler {
         self.emit(make_abc(Opcode::Not, reg.into(), exp, 0))
       }
     }
+
+    Ok(())
+  }
+
+  fn logical(&mut self, lhs: Expr, rhs: Expr, reg: u8, eq: bool) -> Result<(), String> {
+    self.expr(lhs, reg)?;
+    self.freereg = self.nvars + 1;
+
+    self.emit(make_abc(Opcode::Test, reg as u16, eq as u16, 0));
+    self.emit(make_abc(Opcode::Jmp, 0, 0, 0));
+
+    let jmp_pos = self.ni - 1;
+    let start = self.ni;
+
+    self.expr(rhs, reg)?;
+
+    self.closure.code[jmp_pos] = self.jmp(false, self.ni - start + 1)?;
 
     Ok(())
   }
@@ -598,7 +616,7 @@ impl Compiler {
         self.ncap += 1;
         self.ni += 1;
 
-        self.closure.code.insert(pos, make_abc(Opcode::GetUpVal, pos as u16, var.pos as u16, 0));
+        self.closure.code.insert(pos, make_abc(Opcode::GetUpVal, pos as u16, var.pos as u16, 1));
         self.closure.lines.push(self.line);
 
         var.captured = true;

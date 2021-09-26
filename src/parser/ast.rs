@@ -17,7 +17,9 @@ pub enum BinOp {
   Sub,
   Mul,
   Div,
-  Mod
+  Mod,
+  And,
+  Or
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -66,11 +68,13 @@ impl Expr {
 impl BinOp {
   pub fn priority(&self) -> u8 {
     match self {
-      BinOp::Mul | BinOp::Div | BinOp::Mod => 5,
-      BinOp::Add | BinOp::Sub => 4,
+      BinOp::Mul | BinOp::Div | BinOp::Mod => 7,
+      BinOp::Add | BinOp::Sub => 6,
       BinOp::Gt | BinOp::Ge |
-        BinOp::Lt | BinOp::Le => 3,
-      BinOp::Eq | BinOp::Neq => 2,
+        BinOp::Lt | BinOp::Le => 5,
+      BinOp::Eq | BinOp::Neq => 4,
+      BinOp::And => 3,
+      BinOp::Or => 2,
       BinOp::Assign => 1
     }
   }

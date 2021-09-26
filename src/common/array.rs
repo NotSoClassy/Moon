@@ -40,7 +40,7 @@ impl Array {
     let idx = self.validate_index(idx)?;
 
     let mut vec = self.vec.borrow_mut();
-    let len = self.len();
+    let len = vec.len();
 
     if idx == len {
       vec.push(val);

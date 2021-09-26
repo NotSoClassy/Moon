@@ -426,6 +426,9 @@ impl Parser {
       Token::Percent => Some(BinOp::Mod),
       Token::Equal => Some(BinOp::Assign),
 
+      Token::And => Some(BinOp::And),
+      Token::Or => Some(BinOp::Or),
+
       _ => None
     }
   }

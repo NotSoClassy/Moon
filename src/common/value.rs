@@ -37,6 +37,21 @@ pub enum Type {
   Nil
 }
 
+impl Value {
+  pub fn to_string(&self) -> String {
+    match self {
+      Value::String(s) => s.to_string(),
+      Value::Number(n) => n.to_string(),
+      Value::Bool(b) => b.to_string(),
+      Value::Closure(c) => format!("function: {}", c.name),
+      Value::NativeFunc(rf) => format!("function: {}", rf.name),
+      Value::Array(array) => format!("{:?}", array.vec.borrow()),
+      Value::Table(t) => format!("{:?}", t.tbl.borrow()),
+      Value::Nil => "nil".into()
+    }
+  }
+}
+
 impl Eq for Value {}
 
 impl Hash for Value {
@@ -58,16 +73,7 @@ impl Hash for Value {
 
 impl Debug for Value {
   fn fmt(&self, fmt: &mut Formatter<'_>) -> FmtResult {
-    match self {
-      Value::String(s) => write!(fmt, "{}", s),
-      Value::Number(n) => write!(fmt, "{}", n),
-      Value::Bool(b) => write!(fmt, "{}", b),
-      Value::Closure(c) => write!(fmt, "function: {}", c.name),
-      Value::NativeFunc(rf) => write!(fmt, "function: {}", rf.name),
-      Value::Array(array) => write!(fmt, "{:?}", array.vec.borrow()),
-      Value::Table(t) => write!(fmt, "{:?}", t.tbl.borrow()),
-      Value::Nil => write!(fmt, "nil")
-    }
+    write!(fmt, "{}", self.to_string())
   }
 }
 
@@ -112,6 +118,8 @@ impl Add for Value {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
       (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs + &rhs)),
+      (Value::String(lhs), rhs @ _) => Ok(Value::String(lhs + rhs.to_string().as_str())),
+      (lhs @ _, Value::String(rhs)) => Ok(Value::String(lhs.to_string().as_str().to_owned() + &rhs)),
 
       _ => Err(())
     }

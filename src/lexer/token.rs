@@ -19,6 +19,8 @@ pub enum Token {
   Line,
   Dot,
 
+  And,
+  Or,
   Equal,
   Eq,
   Neq,

@@ -14,7 +14,7 @@ pub enum Opcode {
   /// A | `Reg[A] = nil`
   LoadNil,
 
-  /// A B | `Reg[A] = UpValues[B]`
+  /// A B C | `Reg[A] = UpValues[B]`
   GetUpVal,
 
   /// A B | `UpValue[A] = Reg[B]`
@@ -71,7 +71,7 @@ pub enum Opcode {
   /// A Bx | `if A then pc -= Bx else pc += Bx`
   Jmp,
 
-  /// A | `if Reg[A] then pc += 2`
+  /// A B | `if Reg[A] == (B == 0) then pc += 2`
   Test,
 
   /// A B C | `Reg[C] = Reg[A](Reg(A+1) .. Reg(B))`
@@ -90,37 +90,37 @@ impl From<u8> for Opcode {
   }
 }
 
-pub static OPMODES: &[Opmode] = &[
-  Opmode::Abc, // Move
-  Opmode::Abx, // LoadConst
-  Opmode::Abc, // LoadBool
-  Opmode::Abc, // LoadNil
-  Opmode::Abc, // GetUpVal
-  Opmode::Abc, // SetUpVal
-  Opmode::Abx, // GetGlobal
-  Opmode::Abx, // SetGlobal
-  Opmode::Abc, // NewTable
-  Opmode::Abc, // NewArray
-  Opmode::Abc, // GetObj
-  Opmode::Abc, // SetObj
-  Opmode::Abc, // Add
-  Opmode::Abc, // Sub
-  Opmode::Abc, // Mul
-  Opmode::Abc, // Div
-  Opmode::Abc, // Mod
-  Opmode::Abc, // Eq
-  Opmode::Abc, // Neq
-  Opmode::Abc, // Gt
-  Opmode::Abc, // Ge
-  Opmode::Abc, // Lt
-  Opmode::Abc, // Le
-  Opmode::Abc, // Neg
-  Opmode::Abc, // Not
-  Opmode::Abx, // Jmp
-  Opmode::Abc, // Test
-  Opmode::Abc, // Call
-  Opmode::Abc, // Return
-  Opmode::Abc  // Close
+pub static OPMODES: &[(&'static str, Opmode)] = &[
+  ("Move      ", Opmode::Abc),
+  ("LoadConst ", Opmode::Abx),
+  ("LoadBool  ", Opmode::Abc),
+  ("LoadNil   ", Opmode::Abc),
+  ("GetUpVal  ", Opmode::Abc),
+  ("SetUpVal  ", Opmode::Abc),
+  ("GetGlobal ", Opmode::Abx),
+  ("SetGlobal ", Opmode::Abx),
+  ("NewTable  ", Opmode::Abc),
+  ("NewArray  ", Opmode::Abc),
+  ("GetObj    ", Opmode::Abc),
+  ("SetObj    ", Opmode::Abc),
+  ("Add       ", Opmode::Abc),
+  ("Sub       ", Opmode::Abc),
+  ("Mul       ", Opmode::Abc),
+  ("Div       ", Opmode::Abc),
+  ("Mod       ", Opmode::Abc),
+  ("Eq        ", Opmode::Abc),
+  ("Neq       ", Opmode::Abc),
+  ("Gt        ", Opmode::Abc),
+  ("Ge        ", Opmode::Abc),
+  ("Lt        ", Opmode::Abc),
+  ("Le        ", Opmode::Abc),
+  ("Neg       ", Opmode::Abc),
+  ("Not       ", Opmode::Abc),
+  ("Jmp       ", Opmode::Abx),
+  ("Test      ", Opmode::Abc),
+  ("Call      ", Opmode::Abc),
+  ("Return    ", Opmode::Abc),
+  ("Close     ", Opmode::Abc)
 ];
 
 #[derive(Clone, Copy)]
