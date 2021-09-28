@@ -1,12 +1,11 @@
-use std::os::raw::{ c_int, c_uint };
+use libc::{ RAND_MAX, rand, srand, c_uint };
+
 use std::time::UNIX_EPOCH;
 use std::f64::consts::PI;
 
 use crate::vm::{ VM, env::{ Env, aux::* }, RuntimeError };
 use crate::common::{ Value, Table };
 use crate::{ expect, arg_check };
-
-const RAND_MAX: c_int = c_int::MAX;
 
 macro_rules! max_min {
   ($op:tt, $vm:ident) => {{
@@ -42,11 +41,6 @@ macro_rules! method2 {
 
     Ok(Value::Number(n.$id(n2)))
   }};
-}
-
-extern "C" {
-  fn srand(seed: c_uint);
-  fn rand() -> c_int;
 }
 
 pub fn load(env: &mut Env) {
@@ -112,7 +106,6 @@ fn math_random(vm: &mut VM) -> Result<Value, RuntimeError> {
   let r = unsafe { (rand() % RAND_MAX ) as f64 / RAND_MAX as f64 };
 
   match vm.nci.top - vm.nci.base {
-
     0 => Ok(Value::Number(r)),
 
     1 => {

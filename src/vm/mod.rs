@@ -317,6 +317,17 @@ impl VM {
             *RA_mut!() = tbl.get(b)?
           }
 
+          Value::String(str) => {
+            if let Value::Number(n) = b {
+              let mut n = *n as usize;
+              n = if n == 0 { 1 } else { n };
+
+              *RA_mut!() = Value::String(str.as_str().get(n - 1 .. n).unwrap_or_default().to_string())
+            } else {
+              return Err(RuntimeError::TypeError("index a string".into(), Type::from(b), None))
+            }
+          }
+
           _ => return Err(self.index_error(&a))
         }
       }
@@ -426,12 +437,10 @@ impl VM {
             for i in &call.closure.code {
               let i = *i;
               if get_op(i) == Opcode::GetUpVal && get_c(i) == 1 {
-                let b = get_b(i);
-                let val = self.regs[b as usize].clone();
-
-                call.closure.upvals.borrow_mut().insert(get_a(i) as usize, (b, val));
                 call.pc += 1;
-              } else { break }
+              } else {
+                break
+              }
             }
 
             self.call_stack.push(call);
@@ -446,6 +455,32 @@ impl VM {
 
           _ => return Err(RuntimeError::TypeError("call".into(), Type::from(&func), None))
         }
+      }
+
+      Opcode::Closure => {
+        let cl = if let Value::Closure(cl) = konst!(get_bx(i)) {
+          cl
+        } else {
+          panic!("this is impossible!")
+        };
+
+        let mut upvals = cl.upvals.borrow_mut();
+
+        for i in cl.code.iter() {
+          let i = *i;
+          if get_op(i) == Opcode::GetUpVal && get_c(i) == 1 {
+            let b = get_b(i);
+            let val = self.regs[b as usize].clone();
+
+            upvals.insert(get_a(i) as usize, (b, val));
+          } else {
+            break
+          }
+        }
+
+        drop(upvals);
+
+        *RA_mut!() = Value::Closure(cl.clone());
       }
 
       Opcode::Return => {

@@ -18,7 +18,21 @@ impl Array {
     }
   }
 
-  pub fn validate_index(&self, idx: &Value) -> Result<usize, RuntimeError> {
+  #[allow(unused)]
+  pub fn new_empty() -> Self {
+    Array {
+      vec: Rc::new(RefCell::new(Vec::new()))
+    }
+  }
+
+  #[allow(unused)]
+  pub fn with_capacity(size: usize) -> Self {
+    Array {
+      vec: Rc::new(RefCell::new(Vec::with_capacity(size)))
+    }
+  }
+
+  pub fn validate_index(idx: &Value) -> Result<usize, RuntimeError> {
     if let Value::Number(idx) = idx {
       let idx = *idx;
 
@@ -37,7 +51,7 @@ impl Array {
   }
 
   pub fn insert(&self, idx: &Value, val: Value) -> Result<(), RuntimeError> {
-    let idx = self.validate_index(idx)?;
+    let idx = Array::validate_index(idx)?;
 
     let mut vec = self.vec.borrow_mut();
     let len = vec.len();
@@ -57,7 +71,7 @@ impl Array {
 
   #[inline]
   pub fn get(&self, idx: &Value) -> Result<Value, RuntimeError> {
-    let idx = self.validate_index(idx)?;
+    let idx = Array::validate_index(idx)?;
 
     Ok(self.vec.borrow().get(idx).unwrap_or(&Value::Nil).clone())
   }

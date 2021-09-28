@@ -2,14 +2,13 @@ use std::time::{ SystemTime, UNIX_EPOCH };
 use std::io::Write;
 use std::io;
 
-use crate::common::{ Value, Type, utils::compile_file };
+use crate::common::{ Value, Type };
 use crate::vm::{ VM, env::{ Env, aux::try_get }, RuntimeError };
 use crate::{ expect, expect_any, get_all, optional };
 
 pub fn load(env: &mut Env) {
   env.builtin("tonumber", &tonumber);
   env.builtin("argcheck", &argcheck);
-  env.builtin("require", &require);
   env.builtin("print", &print);
   env.builtin("write", &write);
   env.builtin("clock", &clock);
@@ -100,15 +99,6 @@ fn next(vm: &mut VM) -> Result<Value, RuntimeError> {
 
     _ => Err("bad argument #1".into())
   }
-}
-
-fn require(vm: &mut VM) -> Result<Value, RuntimeError> {
-  let path = expect!(String, vm)?;
-  let closure = compile_file(path)?;
-
-  vm.run_closure(closure)?;
-
-   Ok(Value::Nil)
 }
 
 fn len(vm: &mut VM) -> Result<Value, RuntimeError> {

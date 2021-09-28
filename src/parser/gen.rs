@@ -89,7 +89,7 @@ impl Compiler {
   }
 
   fn compile_one(&mut self, node: Node) -> Result<(), String> {
-    let err = self.walk(node);
+    let err = self._walk(node, true);
     self.freereg = self.nvars;
 
     self.error(err)
@@ -112,17 +112,22 @@ impl Compiler {
 
   #[inline]
   fn walk(&mut self, node: Node) -> Result<(), String> {
-    self.stmt(node.stmt)?;
+    self._walk(node, false)
+  }
+
+  #[inline]
+  fn _walk(&mut self, node: Node, should_close: bool) -> Result<(), String> {
+    self.stmt(node.stmt, should_close)?;
     self.line = node.line;
     Ok(())
   }
 
-  fn stmt(&mut self, stmt: Stmt) -> Result<(), String> {
+  fn stmt(&mut self, stmt: Stmt, should_close: bool) -> Result<(), String> {
     match stmt {
       Stmt::Let(name, val) => self.let_stmt(name, val),
       Stmt::Return(val) => self.return_stmt(val),
       Stmt::While(cond, block) => self.while_stmt(cond, *block),
-      Stmt::Block(block) => self.block_stmt(block, true),
+      Stmt::Block(block) => self.block_stmt(block, should_close),
       Stmt::For(pre, cond, post, body) => self.for_stmt(*pre, cond, post, *body),
       Stmt::If(cond, blocks) => self.if_stmt(cond, *blocks),
       Stmt::Fn(name, params, body) => self.fn_stmt(name, params, *body),
@@ -142,7 +147,7 @@ impl Compiler {
     let var = self.register_var(name.clone())?;
     let closure = self.func_body(body, params)?;
 
-    self.load_const(Value::Closure(closure), var)?;
+    self.load_closure(closure, var)?;
 
     Ok(())
   }
@@ -334,8 +339,8 @@ impl Compiler {
   }
 
   fn load_func(&mut self, params: Vec<String>, body: Node, reg: u8) -> Result<(), String> {
-    let closure = Value::Closure(self.func_body(body, params)?);
-    self.load_const(closure, reg)?;
+    let closure = self.func_body(body, params)?;
+    self.load_closure(closure, reg)?;
 
     Ok(())
   }
@@ -560,6 +565,12 @@ impl Compiler {
   fn load_const(&mut self, val: Value, reg: u8) -> Result<(), String> {
     let pos = self.resolve_const(val)?;
     self.emit(make_abx(Opcode::LoadConst, reg.into(), pos));
+    Ok(())
+  }
+
+  fn load_closure(&mut self, val: Closure, reg: u8) -> Result<(), String> {
+    let pos = self.resolve_const(Value::Closure(val))?;
+    self.emit(make_abx(Opcode::Closure, reg.into(), pos));
     Ok(())
   }
 

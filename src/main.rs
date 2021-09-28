@@ -1,3 +1,5 @@
+extern crate libc;
+
 use std::process::exit;
 use std::env;
 

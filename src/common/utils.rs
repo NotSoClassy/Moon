@@ -33,3 +33,14 @@ pub fn do_file(name: String) -> Result<(), String> {
   let mut vm = VM::new(closure);
   vm.run()
 }
+
+#[allow(unused)]
+pub fn do_string(src: String) -> Result<(), String> {
+  let parser = Parser::new(src, "buf".into());
+
+  let mut compiler = Compiler::new("buf".into());
+  compiler.compile(parser.nodes)?;
+
+  let mut vm = VM::new(compiler.closure.clone());
+  vm.run()
+}

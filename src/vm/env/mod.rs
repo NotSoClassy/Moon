@@ -1,10 +1,11 @@
 use crate::common::{ Value, BuiltIn, Table };
 use aux::tbl_builtin;
 
+pub mod aux;
 mod globals;
 mod mathlib;
+mod require;
 mod strlib;
-mod aux;
 
 pub struct Env {
   pub globals: Table
@@ -26,6 +27,7 @@ impl Env {
     strlib::load(self);
     mathlib::load(self);
 
+    self.builtin("require", &require::require);
     self.set_global(Value::String("_G".into()), Value::Table(self.globals.clone()))
   }
 

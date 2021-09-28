@@ -11,8 +11,7 @@ pub struct Parser {
 
 impl Parser {
   pub fn new(code: String, name: String) -> Self {
-    let mut lexer = Lexer::new(code, name);
-    lexer.lex_next().unwrap();
+    let lexer = Lexer::new(code, name);
 
     Parser {
       token: lexer.token,
@@ -23,6 +22,8 @@ impl Parser {
   }
 
   pub fn parse(&mut self) -> Result<(), String> {
+    self.next();
+
     if self.token == Token::Eof { return Ok(()) }
 
     while self.token != Token::Eof {
@@ -145,7 +146,12 @@ impl Parser {
 
   fn return_stmt(&mut self) -> Result<Stmt, String> {
     self.next();
-    let val = self.expr()?;
+
+    let val = if self.token == Token::Semi {
+      Expr::Nil
+    } else {
+      self.expr()?
+    };
 
     Ok(Stmt::Return(val))
   }

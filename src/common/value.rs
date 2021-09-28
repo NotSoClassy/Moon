@@ -117,7 +117,6 @@ impl Add for Value {
   fn add(self, rhs: Value) -> Result<Value, ()> {
     match (self.clone(), rhs.clone()) {
       (Value::Number(lhs), Value::Number(rhs)) => Ok(Value::Number(lhs + rhs)),
-      (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs + &rhs)),
       (Value::String(lhs), rhs @ _) => Ok(Value::String(lhs + rhs.to_string().as_str())),
       (lhs @ _, Value::String(rhs)) => Ok(Value::String(lhs.to_string().as_str().to_owned() + &rhs)),
 

@@ -10,13 +10,6 @@ pub struct Lexer {
   pub token: Token
 }
 
-fn get_token(res: Result<Token, String>) -> Option<Token> {
-  if let Ok(tkn) = res {
-    return Some(tkn)
-  }
-  None
-}
-
 fn resolve(res: Result<(), String>, token: Token) -> Result<Token, String> {
   if let Err(e) = res {
     return Err(e.to_string())
@@ -46,7 +39,7 @@ impl Lexer {
     if let Err(e) = res {
       Err(e)
     } else {
-      self.token = get_token(res).unwrap();
+      self.token = res.unwrap();
       Ok(())
     }
   }
@@ -133,7 +126,7 @@ impl Lexer {
         self.lex()
       }
 
-      ' ' | '\t' => {
+      ' ' | '\t' | '\r' => {
         self.next();
         self.lex()
       }
@@ -217,8 +210,8 @@ impl Lexer {
               ""
             }
 
+            'n' | 'r' => "\n",
             't' => "\t",
-            'n' => "\n",
             '\'' => "'",
             '"' => "\"",
             '\\' => "\\",

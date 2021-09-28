@@ -77,6 +77,9 @@ pub enum Opcode {
   /// A B C | `Reg[C] = Reg[A](Reg(A+1) .. Reg(B))`
   Call,
 
+  /// A Bx | `Reg[A] = Consts[Bx]`
+  Closure,
+
   /// A B | `return B && nil || Reg[A]`
   Return,
 
@@ -119,6 +122,7 @@ pub static OPMODES: &[(&'static str, Opmode)] = &[
   ("Jmp       ", Opmode::Abx),
   ("Test      ", Opmode::Abc),
   ("Call      ", Opmode::Abc),
+  ("Closure   ", Opmode::Abx),
   ("Return    ", Opmode::Abc),
   ("Close     ", Opmode::Abc)
 ];
